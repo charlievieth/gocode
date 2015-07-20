@@ -1,13 +1,14 @@
-package main
+package gocode
 
 import (
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+
+	_ "net/http/pprof"
 )
 
 var (
