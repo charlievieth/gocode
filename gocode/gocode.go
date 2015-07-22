@@ -17,11 +17,40 @@ type Candidate struct {
 	Class string `json:"class"`
 }
 
+func (c Candidate) String() string {
+	b := make([]byte, len(c.Name)+len(c.Type)+len(c.Class)+2)
+	n := copy(b, c.Class)
+	n += copy(b[n:], []byte{' '})
+	n += copy(b[n:], c.Name)
+	switch c.Class {
+	case "func":
+		if strings.HasPrefix(c.Type, "func") {
+			n += copy(b[n:], c.Type[len("func"):])
+		}
+		return string(b[:n])
+	case "package":
+		return string(b[:n])
+	default:
+		if c.Type != "" {
+			n += copy(b[n:], []byte{' '})
+			n += copy(b[n:], c.Type)
+		}
+		return string(b[:n])
+	}
+}
+
 type Config struct {
 	GOROOT        string
 	GOPATH        string
 	InstallSuffix string
 	Builtins      bool // propose builtin functions
+}
+
+func (c *Config) Complete(file []byte, name string, cursor int) []Candidate {
+	if gocodeDaemon == nil {
+		gocodeDaemon = newDaemon()
+	}
+	return gocodeDaemon.complete(file, name, cursor, c)
 }
 
 var gocodeDaemon = newDaemon()
@@ -54,7 +83,7 @@ func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) []
 	// TODO: Should conf be a val or ptr ???
 	d.update(conf)
 	list, _ := d.autocomplete.apropos(file, name, cursor)
-	if list == nil {
+	if list == nil || len(list) == 0 {
 		return NoCandidates
 	}
 	res := make([]Candidate, len(list))
@@ -68,14 +97,14 @@ func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) []
 	return res
 }
 
-func (d *daemon) Xupdate(conf *Config) {
+func (d *daemon) update(conf *Config) {
 	if d.same(conf) {
-		if g_config.ProposeBuiltins != conf.Builtins {
-			d.mu.Lock()
-			if g_config.ProposeBuiltins != conf.Builtins {
-				g_config.ProposeBuiltins = conf.Builtins
+		if g_config.proposeBuiltins != conf.Builtins {
+			g_config.mu.Lock()
+			if g_config.proposeBuiltins != conf.Builtins {
+				g_config.proposeBuiltins = conf.Builtins
 			}
-			d.mu.Unlock()
+			g_config.mu.Unlock()
 		}
 		return
 	}
@@ -88,36 +117,10 @@ func (d *daemon) Xupdate(conf *Config) {
 		d.declcache = new_decl_cache(d.context)
 		d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
 
-		g_config.LibPath = d.libPath() // global config
-		g_config.ProposeBuiltins = conf.Builtins
+		g_config.libPath = d.libPath() // global config
+		g_config.proposeBuiltins = conf.Builtins
 	}
 	d.mu.Unlock()
-}
-
-func (d *daemon) update(conf *Config) {
-	if d.same(conf) {
-		if g_config.ProposeBuiltins != conf.Builtins {
-			d.mu.Lock()
-			if g_config.ProposeBuiltins != conf.Builtins {
-				g_config.ProposeBuiltins = conf.Builtins
-			}
-			d.mu.Unlock()
-		}
-	} else {
-		d.mu.Lock()
-		if !d.same(conf) {
-			d.context.GOPATH = conf.GOPATH
-			d.context.GOROOT = conf.GOROOT
-			d.context.InstallSuffix = conf.InstallSuffix
-			d.pkgcache = new_package_cache()
-			d.declcache = new_decl_cache(d.context)
-			d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
-
-			g_config.LibPath = d.libPath() // global config
-			g_config.ProposeBuiltins = conf.Builtins
-		}
-		d.mu.Unlock()
-	}
 }
 
 func (d *daemon) same(conf *Config) bool {
