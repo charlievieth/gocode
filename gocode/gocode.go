@@ -68,6 +68,32 @@ func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) []
 	return res
 }
 
+func (d *daemon) Xupdate(conf *Config) {
+	if d.same(conf) {
+		if g_config.ProposeBuiltins != conf.Builtins {
+			d.mu.Lock()
+			if g_config.ProposeBuiltins != conf.Builtins {
+				g_config.ProposeBuiltins = conf.Builtins
+			}
+			d.mu.Unlock()
+		}
+		return
+	}
+	d.mu.Lock()
+	if !d.same(conf) {
+		d.context.GOPATH = conf.GOPATH
+		d.context.GOROOT = conf.GOROOT
+		d.context.InstallSuffix = conf.InstallSuffix
+		d.pkgcache = new_package_cache()
+		d.declcache = new_decl_cache(d.context)
+		d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
+
+		g_config.LibPath = d.libPath() // global config
+		g_config.ProposeBuiltins = conf.Builtins
+	}
+	d.mu.Unlock()
+}
+
 func (d *daemon) update(conf *Config) {
 	if d.same(conf) {
 		if g_config.ProposeBuiltins != conf.Builtins {
