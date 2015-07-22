@@ -1,7 +1,6 @@
 *.8
 *.a
 *.out
-gocode
 gocode.exe
 goremote
 gocodetest
