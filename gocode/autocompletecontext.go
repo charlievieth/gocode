@@ -60,7 +60,7 @@ func (b *out_buffers) Swap(i, j int) {
 }
 
 func (b *out_buffers) append_decl(p, name string, decl *decl, class decl_class) {
-	c1 := !g_config.ProposeBuiltins && decl.scope == g_universe_scope && decl.name != "Error"
+	c1 := !g_config.ProposeBuiltins() && decl.scope == g_universe_scope && decl.name != "Error"
 	c2 := class != decl_invalid && decl.class != class
 	c3 := class == decl_invalid && !has_prefix(name, p, b.ignorecase)
 	c4 := !decl.matches()
