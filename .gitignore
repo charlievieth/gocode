@@ -10,3 +10,5 @@ showcursor
 showsmap
 rename
 *.test
+*.svg
+*.bash
