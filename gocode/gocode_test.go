@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-const TestDirectory = "/Users/Charlie/go/src/git.vieth.io/gocode/_testing"
+const TestDirectory = "../_testing"
 
 type Test struct {
 	Name   string
