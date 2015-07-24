@@ -146,7 +146,7 @@ loop:
 		prev = t
 	}
 	exprT := this.tokens[this.token_index+1 : orig]
-	if *g_debug {
+	if g_debug {
 		log.Printf("extracted expression tokens: %#v", exprT)
 	}
 	return make_expr(exprT)

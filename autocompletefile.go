@@ -56,7 +56,7 @@ func (f *auto_complete_file) offset(p token.Pos) int {
 func (f *auto_complete_file) process_data(data []byte) {
 	cur, filedata, block := rip_off_decl(data, f.cursor)
 	file, err := parser.ParseFile(f.fset, "", filedata, 0)
-	if err != nil && *g_debug {
+	if err != nil && g_debug {
 		log.Printf("Error parsing input file: %s", err)
 	}
 	f.package_name = package_name(file)

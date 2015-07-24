@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-const TestDirectory = "../_testing"
+const TestDirectory = "./_testing"
 
 var (
 	tests []Test

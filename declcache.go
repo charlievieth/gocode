@@ -217,7 +217,7 @@ func autobuild(p *build.Package) error {
 // correctly, the newly compiled package should then be in the usual place in the `$GOPATH/pkg`
 // directory, and gocode will pick it up from there.
 func build_package(p *build.Package) error {
-	if *g_debug {
+	if g_debug {
 		log.Printf("-------------------")
 		log.Printf("rebuilding package %s", p.Name)
 		log.Printf("package import: %s", p.ImportPath)
@@ -230,14 +230,14 @@ func build_package(p *build.Package) error {
 	if err != nil {
 		return err
 	}
-	if *g_debug {
+	if g_debug {
 		log.Printf("build out: %s\n", string(out))
 	}
 	return nil
 }
 
 func log_found_package_maybe(imp, pkgpath string) {
-	if *g_debug {
+	if g_debug {
 		log.Printf("Found %q at %q\n", imp, pkgpath)
 	}
 }
@@ -247,7 +247,7 @@ func log_build_context(context build.Context) {
 	log.Printf(" GOPATH: %s\n", context.GOPATH)
 	log.Printf(" GOOS: %s\n", context.GOOS)
 	log.Printf(" GOARCH: %s\n", context.GOARCH)
-	log.Printf(" lib-path: %q\n", g_config.LibPath)
+	log.Printf(" lib-path: %q\n", g_config.LibPath())
 }
 
 // find_global_file returns the file path of the compiled package corresponding to the specified
@@ -266,8 +266,8 @@ func find_global_file(imp string, context build.Context) (string, bool) {
 	pkgfile := fmt.Sprintf("%s.a", imp)
 
 	// if lib-path is defined, use it
-	if g_config.LibPath != "" {
-		for _, p := range filepath.SplitList(g_config.LibPath) {
+	if g_config.LibPath() != "" {
+		for _, p := range filepath.SplitList(g_config.LibPath()) {
 			pkg_path := filepath.Join(p, pkgfile)
 			if file_exists(pkg_path) {
 				log_found_package_maybe(imp, pkg_path)
@@ -285,9 +285,9 @@ func find_global_file(imp string, context build.Context) (string, bool) {
 
 	p, err := context.Import(imp, "", build.AllowBinary|build.FindOnly)
 	if err == nil {
-		if g_config.Autobuild {
+		if g_config.Autobuild() {
 			err = autobuild(p)
-			if err != nil && *g_debug {
+			if err != nil && g_debug {
 				log.Printf("Autobuild error: %s\n", err)
 			}
 		}
@@ -297,7 +297,7 @@ func find_global_file(imp string, context build.Context) (string, bool) {
 		}
 	}
 
-	if *g_debug {
+	if g_debug {
 		log.Printf("Import path %q was not resolved\n", imp)
 		log.Println("Gocode's build context is:")
 		log_build_context(context)
