@@ -68,6 +68,7 @@ func TestParallel_2(t *testing.T) {
 
 func TestParallel_3(t *testing.T) {
 	t.Parallel()
+	conf.GOPATH = "" // Alter GOPATH
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
 			t.Fatal(err)
@@ -77,7 +78,7 @@ func TestParallel_3(t *testing.T) {
 
 func TestParallel_4(t *testing.T) {
 	t.Parallel()
-	conf.GOPATH = "" // Alter GOPATH
+	conf.GOPATH = os.Getenv("GOPATH") // Alter GOPATH
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
 			t.Fatal(err)

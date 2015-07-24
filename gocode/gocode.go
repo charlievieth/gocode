@@ -46,11 +46,11 @@ type Config struct {
 	Builtins      bool // propose builtin functions
 }
 
-func (c Config) Complete(file []byte, name string, cursor int) []Candidate {
+func (c *Config) Complete(file []byte, name string, cursor int) []Candidate {
 	if gocodeDaemon == nil {
 		gocodeDaemon = newDaemon()
 	}
-	return gocodeDaemon.complete(file, name, cursor, &c)
+	return gocodeDaemon.complete(file, name, cursor, c)
 }
 
 var gocodeDaemon = newDaemon()
