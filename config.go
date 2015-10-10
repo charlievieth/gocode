@@ -24,6 +24,14 @@ func (c *config) ProposeBuiltins() (b bool) {
 	return
 }
 
+func (c *config) UpdateProposeBuiltins(b bool) {
+	if b != c.ProposeBuiltins() {
+		c.mu.Lock()
+		b = c.proposeBuiltins
+		c.mu.Unlock()
+	}
+}
+
 func (c *config) LibPath() (s string) {
 	c.mu.RLock()
 	s = c.libPath

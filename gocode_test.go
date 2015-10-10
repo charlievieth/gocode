@@ -54,7 +54,7 @@ func TestParallel_1(t *testing.T) {
 	t.Parallel()
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
-			t.Fatal(err)
+			t.Error(err)
 		}
 	}
 }
@@ -64,7 +64,7 @@ func TestParallel_2(t *testing.T) {
 	t.Parallel()
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
-			t.Fatal(err)
+			t.Error(err)
 		}
 	}
 }
@@ -75,7 +75,7 @@ func TestParallel_3(t *testing.T) {
 	conf.GOPATH = "" // Alter GOPATH
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
-			t.Fatal(err)
+			t.Error(err)
 		}
 	}
 }
@@ -86,7 +86,7 @@ func TestParallel_4(t *testing.T) {
 	conf.GOPATH = os.Getenv("GOPATH") // Alter GOPATH
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
-			t.Fatal(err)
+			t.Error(err)
 		}
 	}
 }
@@ -131,6 +131,9 @@ func (t Test) Check(conf *Config) error {
 	}
 	fn := filepath.Base(filepath.Dir(t.Name))
 	cs := conf.Complete(t.File, t.Name, t.Cursor)
+	if cs == nil {
+		return fmt.Errorf("Check: nil Candidates (%+v)", conf)
+	}
 	if len(cs) != len(t.Result) {
 		return fmt.Errorf("count: expected %d got %d: %s", len(t.Result), len(cs), fn)
 	}

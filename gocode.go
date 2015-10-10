@@ -2,6 +2,7 @@ package gocode
 
 import (
 	"go/build"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -60,7 +61,7 @@ type daemon struct {
 	declcache    *decl_cache
 	pkgcache     package_cache
 	context      build.Context
-	mu           sync.Mutex // daemon mutex
+	mu           sync.Mutex
 }
 
 func newDaemon() *daemon {
@@ -80,13 +81,25 @@ func newDaemon() *daemon {
 var NoCandidates = []Candidate{}
 
 func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) []Candidate {
-	// TODO: Should conf be a val or ptr ???
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var res []Candidate
+	defer func() {
+		if e := recover(); e != nil {
+			if g_debug {
+				log.Printf("gocode: panic (%+v)\n", e)
+			}
+			if len(res) == 0 {
+				res = NoCandidates
+			}
+		}
+	}()
 	d.update(conf)
 	list, _ := d.autocomplete.apropos(file, name, cursor)
 	if list == nil || len(list) == 0 {
 		return NoCandidates
 	}
-	res := make([]Candidate, len(list))
+	res = make([]Candidate, len(list))
 	for i, c := range list {
 		res[i] = Candidate{
 			Name:  c.Name,
@@ -98,17 +111,7 @@ func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) []
 }
 
 func (d *daemon) update(conf *Config) {
-	if d.same(conf) {
-		if g_config.proposeBuiltins != conf.Builtins {
-			g_config.mu.Lock()
-			if g_config.proposeBuiltins != conf.Builtins {
-				g_config.proposeBuiltins = conf.Builtins
-			}
-			g_config.mu.Unlock()
-		}
-		return
-	}
-	d.mu.Lock()
+	g_config.UpdateProposeBuiltins(conf.Builtins)
 	if !d.same(conf) {
 		d.context.GOPATH = conf.GOPATH
 		d.context.GOROOT = conf.GOROOT
@@ -120,7 +123,6 @@ func (d *daemon) update(conf *Config) {
 		g_config.libPath = d.libPath() // global config
 		g_config.proposeBuiltins = conf.Builtins
 	}
-	d.mu.Unlock()
 }
 
 func (d *daemon) same(conf *Config) bool {
