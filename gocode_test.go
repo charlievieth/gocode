@@ -118,6 +118,16 @@ func BenchmarkAll(b *testing.B) {
 	}
 }
 
+func BenchmarkParallel(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for _, t := range tests {
+				_ = conf.Complete(t.File, t.Name, t.Cursor)
+			}
+		}
+	})
+}
+
 type Test struct {
 	Name   string
 	File   []byte
