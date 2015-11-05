@@ -44,6 +44,7 @@ type Config struct {
 	GOROOT        string
 	GOPATH        string
 	InstallSuffix string
+	AutoBuild     bool
 	Builtins      bool // propose builtin functions
 }
 

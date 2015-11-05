@@ -27,7 +27,15 @@ func (c *config) ProposeBuiltins() (b bool) {
 func (c *config) UpdateProposeBuiltins(b bool) {
 	if b != c.ProposeBuiltins() {
 		c.mu.Lock()
-		b = c.proposeBuiltins
+		c.proposeBuiltins = b
+		c.mu.Unlock()
+	}
+}
+
+func (c *config) UpdateAutoBuild(b bool) {
+	if b != c.Autobuild() {
+		c.mu.Lock()
+		c.autobuild = b
 		c.mu.Unlock()
 	}
 }
