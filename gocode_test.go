@@ -114,9 +114,27 @@ func TestParallel_4(t *testing.T) {
 	}
 }
 
+// Ensure complete does not panic!
+func TestCompleteRecover(t *testing.T) {
+	d := newDaemon()
+	defer func() {
+		if e := recover(); e != nil {
+			t.Fatalf("TestCompleteRecover panicked: %+v", e)
+		}
+	}()
+	d.complete(nil, "", 0, nil)
+}
+
 func BenchmarkOne(b *testing.B) {
 	t := tests[0]
 	for i := 0; i < b.N; i++ {
+		_ = conf.Complete(t.File, t.Name, t.Cursor)
+	}
+}
+
+func BenchmarkMod(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		t := tests[i%len(tests)]
 		_ = conf.Complete(t.File, t.Name, t.Cursor)
 	}
 }
