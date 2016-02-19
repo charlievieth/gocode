@@ -110,7 +110,8 @@ func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) (r
 }
 
 func (d *daemon) update(conf *Config) {
-	g_config.UpdateProposeBuiltins(conf.Builtins)
+	g_config.SetProposeBuiltins(conf.Builtins)
+	g_config.SetAutoBuild(conf.AutoBuild)
 	if !d.same(conf) {
 		d.context.GOPATH = conf.GOPATH
 		d.context.GOROOT = conf.GOROOT
