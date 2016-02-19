@@ -84,6 +84,7 @@ func TestParallel_Stress(t *testing.T) {
 	conf := testConf.Config()
 	wg := new(sync.WaitGroup)
 	for i := 0; i < 10; i++ {
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for i := 0; i < 100; i++ {
