@@ -50,7 +50,6 @@ func TestGocode(t *testing.T) {
 }
 
 func TestParallel_1(t *testing.T) {
-	t.Skip("Skip: Parallel_1")
 	t.Parallel()
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
@@ -60,7 +59,6 @@ func TestParallel_1(t *testing.T) {
 }
 
 func TestParallel_2(t *testing.T) {
-	t.Skip("Skip: Parallel_2")
 	t.Parallel()
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
@@ -70,7 +68,6 @@ func TestParallel_2(t *testing.T) {
 }
 
 func TestParallel_3(t *testing.T) {
-	t.Skip("Skip: Parallel_3")
 	t.Parallel()
 	conf.GOPATH = "" // Alter GOPATH
 	for _, test := range tests {
@@ -81,7 +78,6 @@ func TestParallel_3(t *testing.T) {
 }
 
 func TestParallel_4(t *testing.T) {
-	t.Skip("Skip: Parallel_4")
 	t.Parallel()
 	conf.GOPATH = os.Getenv("GOPATH") // Alter GOPATH
 	for _, test := range tests {
