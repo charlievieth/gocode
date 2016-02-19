@@ -14,6 +14,10 @@ import (
 	"testing"
 )
 
+func init() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+}
+
 const TestDirectory = "./_testing"
 
 var (
@@ -70,6 +74,28 @@ func TestGocode(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// Parallel stress test.
+func TestParallel_Stress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Remove '-short' flag to run")
+	}
+	conf := testConf.Config()
+	wg := new(sync.WaitGroup)
+	for i := 0; i < 10; i++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 100; i++ {
+				for _, test := range tests {
+					if err := test.Check(conf); err != nil {
+						t.Error(err)
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestParallel_1(t *testing.T) {
