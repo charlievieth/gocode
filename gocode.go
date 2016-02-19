@@ -61,20 +61,20 @@ type daemon struct {
 	autocomplete *auto_complete_context
 	declcache    *decl_cache
 	pkgcache     package_cache
-	context      build.Context
+	context      package_lookup_context
 	mu           sync.Mutex
 }
 
 func newDaemon() *daemon {
-	ctx := build.Default
-	ctx.GOPATH = os.Getenv("GOPATH")
-	ctx.GOROOT = runtime.GOROOT()
+	ctxt := build.Default
+	ctxt.GOPATH = os.Getenv("GOPATH")
+	ctxt.GOROOT = runtime.GOROOT()
 	d := daemon{
-		context:   ctx,
-		pkgcache:  new_package_cache(),
-		declcache: new_decl_cache(ctx),
-		mu:        sync.Mutex{},
+		context:  package_lookup_context{Context: ctxt},
+		pkgcache: new_package_cache(),
+		mu:       sync.Mutex{},
 	}
+	d.declcache = new_decl_cache(&d.context)
 	d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
 	return &d
 }
@@ -118,7 +118,7 @@ func (d *daemon) update(conf *Config) {
 		d.context.GOROOT = conf.GOROOT
 		d.context.InstallSuffix = conf.InstallSuffix
 		d.pkgcache = new_package_cache()
-		d.declcache = new_decl_cache(d.context)
+		d.declcache = new_decl_cache(&d.context)
 		d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
 
 		g_config.libPath = d.libPath() // global config

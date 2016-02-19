@@ -15,6 +15,8 @@ type config struct {
 	autobuild        bool   `json:"autobuild"`
 	forceDebugOutput string `json:"force-debug-output"`
 	mu               sync.RWMutex
+
+	// Excludes: PackageLookupMode, used to enable 'gb' lookup.
 }
 
 func (c *config) ProposeBuiltins() (b bool) {
@@ -26,8 +28,8 @@ func (c *config) ProposeBuiltins() (b bool) {
 
 func (c *config) UpdateProposeBuiltins(b bool) {
 	if b != c.ProposeBuiltins() {
-		c.mu.Lock()
 		c.proposeBuiltins = b
+		c.mu.Lock()
 		c.mu.Unlock()
 	}
 }

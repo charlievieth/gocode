@@ -3,8 +3,8 @@ package gocode
 import (
 	"bytes"
 	"go/ast"
-	"go/build"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"log"
 )
@@ -13,11 +13,22 @@ func parse_decl_list(fset *token.FileSet, data []byte) ([]ast.Decl, error) {
 	var buf bytes.Buffer
 	buf.WriteString("package p;")
 	buf.Write(data)
-	file, err := parser.ParseFile(fset, "", buf.Bytes(), 0)
+	file, err := parser.ParseFile(fset, "", buf.Bytes(), parser.AllErrors)
 	if err != nil {
 		return file.Decls, err
 	}
 	return file.Decls, nil
+}
+
+func log_parse_error(intro string, err error) {
+	if el, ok := err.(scanner.ErrorList); ok {
+		log.Printf("%s:", intro)
+		for _, er := range el {
+			log.Printf(" %s", er)
+		}
+	} else {
+		log.Printf("%s: %s", intro, err)
+	}
 }
 
 //-------------------------------------------------------------------------
@@ -35,10 +46,10 @@ type auto_complete_file struct {
 
 	cursor  int // for current file buffer only
 	fset    *token.FileSet
-	context build.Context
+	context *package_lookup_context
 }
 
-func new_auto_complete_file(name string, context build.Context) *auto_complete_file {
+func new_auto_complete_file(name string, context *package_lookup_context) *auto_complete_file {
 	p := new(auto_complete_file)
 	p.name = name
 	p.cursor = -1
@@ -55,9 +66,9 @@ func (f *auto_complete_file) offset(p token.Pos) int {
 // this one is used for current file buffer exclusively
 func (f *auto_complete_file) process_data(data []byte) {
 	cur, filedata, block := rip_off_decl(data, f.cursor)
-	file, err := parser.ParseFile(f.fset, "", filedata, 0)
+	file, err := parser.ParseFile(f.fset, "", filedata, parser.AllErrors)
 	if err != nil && g_debug {
-		log.Printf("Error parsing input file: %s", err)
+		log_parse_error("Error parsing input file (outer block)", err)
 	}
 	f.package_name = package_name(file)
 
@@ -76,7 +87,10 @@ func (f *auto_complete_file) process_data(data []byte) {
 	}
 	if block != nil {
 		// process local function as top-level declaration
-		decls, _ := parse_decl_list(f.fset, block)
+		decls, err := parse_decl_list(f.fset, block)
+		if err != nil && g_debug {
+			log_parse_error("Error parsing input file (inner block)", err)
+		}
 
 		for _, d := range decls {
 			anonymify_ast(d, 0, f.filescope)

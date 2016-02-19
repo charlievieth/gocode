@@ -186,17 +186,19 @@ func pack_build_context(ctx *build.Context) go_build_context {
 	}
 }
 
-func unpack_build_context(ctx *go_build_context) build.Context {
-	return build.Context{
-		GOARCH:        ctx.GOARCH,
-		GOOS:          ctx.GOOS,
-		GOROOT:        ctx.GOROOT,
-		GOPATH:        ctx.GOPATH,
-		CgoEnabled:    ctx.CgoEnabled,
-		UseAllFiles:   ctx.UseAllFiles,
-		Compiler:      ctx.Compiler,
-		BuildTags:     ctx.BuildTags,
-		ReleaseTags:   ctx.ReleaseTags,
-		InstallSuffix: ctx.InstallSuffix,
+func unpack_build_context(ctx *go_build_context) package_lookup_context {
+	return package_lookup_context{
+		Context: build.Context{
+			GOARCH:        ctx.GOARCH,
+			GOOS:          ctx.GOOS,
+			GOROOT:        ctx.GOROOT,
+			GOPATH:        ctx.GOPATH,
+			CgoEnabled:    ctx.CgoEnabled,
+			UseAllFiles:   ctx.UseAllFiles,
+			Compiler:      ctx.Compiler,
+			BuildTags:     ctx.BuildTags,
+			ReleaseTags:   ctx.ReleaseTags,
+			InstallSuffix: ctx.InstallSuffix,
+		},
 	}
 }

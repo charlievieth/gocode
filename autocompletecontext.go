@@ -206,6 +206,12 @@ func (c *auto_complete_context) get_candidates_from_decl(cc cursor_context, clas
 		if cc.decl.class == decl_package && !ast.IsExported(decl.name) {
 			continue
 		}
+		if cc.struct_field {
+			// if we're autocompleting struct field init, skip all methods
+			if _, ok := decl.typ.(*ast.FuncType); ok {
+				continue
+			}
+		}
 		b.append_decl(cc.partial, decl.name, decl, class)
 	}
 	// propose all children of an underlying struct/interface type
@@ -300,21 +306,6 @@ func (c *auto_complete_context) apropos(file []byte, filename string, cursor int
 
 	sort.Sort(b)
 	return b.candidates, partial
-}
-
-func (c *auto_complete_context) cursor_type_pkg(file []byte, filename string, cursor int) (string, string) {
-	c.current.cursor = cursor
-	c.current.name = filename
-	c.current.process_data(file)
-	c.update_caches()
-	typ, pkg, ok := c.deduce_cursor_type_pkg(file, cursor)
-	if !ok || typ == nil {
-		return "", ""
-	}
-
-	var tmp bytes.Buffer
-	pretty_print_type_expr(&tmp, typ)
-	return tmp.String(), pkg
 }
 
 func update_packages(ps map[string]*package_file_cache) {
