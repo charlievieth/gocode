@@ -10,15 +10,37 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
 const TestDirectory = "./_testing"
 
 var (
-	tests []Test
-	conf  *Config
+	tests    []Test
+	conf     *Config
+	testConf *TestConfig
 )
+
+type TestConfig struct {
+	c  Config
+	mu sync.RWMutex
+}
+
+func (t *TestConfig) Config() *Config {
+	t.mu.RLock()
+	c := t.c
+	t.mu.RUnlock()
+	return &c
+}
+
+func (t *TestConfig) SetGOPATH(s string) *Config {
+	t.mu.Lock()
+	t.c.GOPATH = s
+	c := t.c
+	t.mu.Unlock()
+	return &c
+}
 
 func init() {
 	var err error
@@ -26,6 +48,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	testConf = &TestConfig{c: *conf}
 	tests, err = loadTests()
 	if err != nil {
 		panic(err)
@@ -50,6 +73,7 @@ func TestGocode(t *testing.T) {
 }
 
 func TestParallel_1(t *testing.T) {
+	conf := testConf.Config()
 	t.Parallel()
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
@@ -59,6 +83,7 @@ func TestParallel_1(t *testing.T) {
 }
 
 func TestParallel_2(t *testing.T) {
+	conf := testConf.Config()
 	t.Parallel()
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
@@ -68,8 +93,9 @@ func TestParallel_2(t *testing.T) {
 }
 
 func TestParallel_3(t *testing.T) {
+	testConf.SetGOPATH("")
+	conf := testConf.Config()
 	t.Parallel()
-	conf.GOPATH = "" // Alter GOPATH
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
 			t.Error(err)
@@ -78,8 +104,9 @@ func TestParallel_3(t *testing.T) {
 }
 
 func TestParallel_4(t *testing.T) {
+	testConf.SetGOPATH(os.Getenv("GOPATH"))
+	conf := testConf.Config()
 	t.Parallel()
-	conf.GOPATH = os.Getenv("GOPATH") // Alter GOPATH
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
 			t.Error(err)
