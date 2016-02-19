@@ -72,7 +72,6 @@ func newDaemon() *daemon {
 	d := daemon{
 		context:  package_lookup_context{Context: ctxt},
 		pkgcache: new_package_cache(),
-		mu:       sync.Mutex{},
 	}
 	d.declcache = new_decl_cache(&d.context)
 	d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
@@ -81,10 +80,7 @@ func newDaemon() *daemon {
 
 var NoCandidates = []Candidate{}
 
-func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) []Candidate {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	var res []Candidate
+func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) (res []Candidate) {
 	defer func() {
 		if e := recover(); e != nil {
 			if g_debug {
@@ -95,6 +91,8 @@ func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) []
 			}
 		}
 	}()
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.update(conf)
 	list, _ := d.autocomplete.apropos(file, name, cursor)
 	if list == nil || len(list) == 0 {
