@@ -71,7 +71,8 @@ func TestInit(t *testing.T) {
 func TestGocode(t *testing.T) {
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
-			t.Fatal(err)
+			// t.Fatal(err)
+			t.Errorf("%s: %s\n", test.Name, err)
 		}
 	}
 }

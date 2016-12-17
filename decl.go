@@ -330,7 +330,10 @@ func method_of(d ast.Decl) string {
 				if se, ok := t.X.(*ast.SelectorExpr); ok {
 					return se.Sel.Name
 				}
-				return t.X.(*ast.Ident).Name
+				if ident, ok := t.X.(*ast.Ident); ok {
+					return ident.Name
+				}
+				return ""
 			case *ast.Ident:
 				return t.Name
 			default:
@@ -1067,8 +1070,15 @@ func pretty_print_type_expr(out io.Writer, e ast.Expr) {
 				// it's always true
 				fmt.Fprintf(out, "interface{}")
 			}
-		} else if strings.HasPrefix(t.Name, "#") {
+		} else if !g_debug && strings.HasPrefix(t.Name, "#") {
 			fmt.Fprintf(out, t.Name[1:])
+		} else if !g_debug && strings.HasPrefix(t.Name, "!") {
+			// these are full package names for disambiguating and pretty
+			// printing packages withing packages, e.g.
+			// !go/ast!ast vs. !github.com/nsf/my/ast!ast
+			// another ugly hack, if people are punished in hell for ugly hacks
+			// I'm screwed...
+			fmt.Fprintf(out, t.Name[strings.LastIndex(t.Name, "!")+1:])
 		} else {
 			fmt.Fprintf(out, t.Name)
 		}
@@ -1275,6 +1285,9 @@ func (f *decl_pack) value_index(i int) (v ast.Expr, vi int) {
 		if len(f.values) > 1 {
 			// in case if there are multiple values, it's a usual
 			// multiassignment
+			if i >= len(f.values) {
+				i = len(f.values) - 1
+			}
 			v = f.values[i]
 		} else {
 			// in case if there is one value, but many names, it's
