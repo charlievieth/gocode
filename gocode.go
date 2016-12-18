@@ -69,13 +69,13 @@ func newDaemon() *daemon {
 	ctxt := build.Default
 	ctxt.GOPATH = os.Getenv("GOPATH")
 	ctxt.GOROOT = runtime.GOROOT()
-	d := daemon{
+	d := &daemon{
 		context:  package_lookup_context{Context: ctxt},
 		pkgcache: new_package_cache(),
 	}
 	d.declcache = new_decl_cache(&d.context)
-	d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
-	return &d
+	d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache, d, new(sync.Mutex))
+	return d
 }
 
 var NoCandidates = []Candidate{}
@@ -91,10 +91,21 @@ func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) (r
 			}
 		}
 	}()
+
+	// d.mu.Lock()
+	// defer d.mu.Unlock()
+	// d.update(conf)
+
+	// WARN
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.update(conf)
-	list, _ := d.autocomplete.apropos(file, name, cursor)
+	d.mu.Unlock()
+
+	c := new_auto_complete_context(d.autocomplete.pcache, d.autocomplete.declcache, d, d.autocomplete.mu)
+	list, _ := c.apropos(file, name, cursor)
+
+	// list, _ := d.autocomplete.apropos(file, name, cursor)
+
 	if list == nil || len(list) == 0 {
 		return NoCandidates
 	}
@@ -118,10 +129,9 @@ func (d *daemon) update(conf *Config) {
 		d.context.InstallSuffix = conf.InstallSuffix
 		d.pkgcache = new_package_cache()
 		d.declcache = new_decl_cache(&d.context)
-		d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
+		d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache, d, d.autocomplete.mu)
 
-		g_config.libPath = d.libPath() // global config
-		g_config.proposeBuiltins = conf.Builtins
+		g_config.SetLibPath(d.libPath())
 	}
 }
 

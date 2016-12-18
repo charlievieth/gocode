@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -140,13 +141,17 @@ type auto_complete_context struct {
 
 	pcache    package_cache // packages cache
 	declcache *decl_cache   // top-level declarations cache
+	daemon    *daemon
+	mu        *sync.Mutex
 }
 
-func new_auto_complete_context(pcache package_cache, declcache *decl_cache) *auto_complete_context {
+func new_auto_complete_context(pcache package_cache, declcache *decl_cache, daemon *daemon, mu *sync.Mutex) *auto_complete_context {
 	c := new(auto_complete_context)
 	c.current = new_auto_complete_file("", declcache.context)
 	c.pcache = pcache
 	c.declcache = declcache
+	c.daemon = daemon
+	c.mu = mu
 	return c
 }
 
@@ -229,7 +234,7 @@ func (c *auto_complete_context) get_candidates_from_decl(cc cursor_context, clas
 }
 
 func (c *auto_complete_context) get_import_candidates(partial string, b *out_buffers) {
-	pkgdirs := gocodeDaemon.context.pkg_dirs()
+	pkgdirs := c.daemon.context.pkg_dirs()
 	resultSet := map[string]struct{}{}
 	for _, pkgdir := range pkgdirs {
 		// convert srcpath to pkgpath and get candidates
@@ -306,6 +311,10 @@ func (c *auto_complete_context) apropos(file []byte, filename string, cursor int
 
 	b := new_out_buffers(c)
 
+	// WARN
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	partial := 0
 	cc, ok := c.deduce_cursor_context(file, cursor)
 	if !ok {
@@ -332,6 +341,9 @@ func (c *auto_complete_context) apropos(file []byte, filename string, cursor int
 	case "package":
 		class = decl_package
 	}
+
+	// c.mu.Lock()
+	// defer c.mu.Unlock()
 
 	if cc.decl_import {
 		c.get_import_candidates(cc.partial, b)

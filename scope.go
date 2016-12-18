@@ -1,5 +1,7 @@
 package gocode
 
+import "sync"
+
 //-------------------------------------------------------------------------
 // scope
 //-------------------------------------------------------------------------
@@ -7,6 +9,7 @@ package gocode
 type scope struct {
 	parent   *scope // nil for universe scope
 	entities map[string]*decl
+	mu       sync.RWMutex
 }
 
 func new_scope(outer *scope) *scope {
@@ -17,11 +20,17 @@ func new_scope(outer *scope) *scope {
 }
 
 // returns: new, prev
-func advance_scope(s *scope) (*scope, *scope) {
+func advance_scope(s *scope) (next *scope, prev *scope) {
+	s.mu.RLock()
 	if len(s.entities) == 0 {
-		return s, s.parent
+		next = s
+		prev = s.parent
+	} else {
+		next = new_scope(s)
+		prev = s
 	}
-	return new_scope(s), s
+	s.mu.RUnlock()
+	return
 }
 
 // adds declaration or returns an existing one
@@ -29,17 +38,31 @@ func (s *scope) add_named_decl(d *decl) *decl {
 	return s.add_decl(d.name, d)
 }
 
+func (s *scope) find_decl(name string) (*decl, bool) {
+	s.mu.RLock()
+	d, ok := s.entities[name]
+	s.mu.RUnlock()
+	return d, ok
+}
+
 func (s *scope) add_decl(name string, d *decl) *decl {
-	decl, ok := s.entities[name]
-	if !ok {
-		s.entities[name] = d
-		return d
+	if dd, ok := s.find_decl(name); ok {
+		return dd
 	}
-	return decl
+	s.mu.Lock()
+	dd, ok := s.entities[name]
+	if !ok {
+		dd = d
+		s.entities[name] = dd
+	}
+	s.mu.Unlock()
+	return dd
 }
 
 func (s *scope) replace_decl(name string, d *decl) {
+	s.mu.Lock()
 	s.entities[name] = d
+	s.mu.Unlock()
 }
 
 func (s *scope) merge_decl(d *decl) {
@@ -53,14 +76,20 @@ func (s *scope) merge_decl(d *decl) {
 	}
 }
 
+func (s *scope) Parent() *scope {
+	s.mu.RLock()
+	p := s.parent
+	s.mu.RUnlock()
+	return p
+}
+
 func (s *scope) lookup(name string) *decl {
-	decl, ok := s.entities[name]
-	if !ok {
-		if s.parent != nil {
-			return s.parent.lookup(name)
-		} else {
-			return nil
-		}
+	s.mu.RLock()
+	d, ok := s.entities[name]
+	p := s.parent
+	s.mu.RUnlock()
+	if ok || p == nil {
+		return d
 	}
-	return decl
+	return p.lookup(name)
 }

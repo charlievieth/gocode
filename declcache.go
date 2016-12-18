@@ -311,50 +311,6 @@ func find_global_file(imp string, context *package_lookup_context) (string, bool
 		}
 	}
 
-	// gb-specific lookup mode, only if the root dir was found
-	// if g_config.PackageLookupMode == "gb" && context.GBProjectRoot != "" {
-	// 	root := context.GBProjectRoot
-	// 	pkg_path := filepath.Join(root, "pkg", context.GOOS+"-"+context.GOARCH, pkgfile)
-	// 	if file_exists(pkg_path) {
-	// 		log_found_package_maybe(imp, pkg_path)
-	// 		return pkg_path, true
-	// 	}
-	// }
-
-	// bzl-specific lookup mode, only if the root dir was found
-	// if g_config.PackageLookupMode == "bzl" && context.BzlProjectRoot != "" {
-	// 	var root, impath string
-	// 	if strings.HasPrefix(imp, g_config.CustomPkgPrefix+"/") {
-	// 		root = filepath.Join(context.BzlProjectRoot, "bazel-bin")
-	// 		impath = imp[len(g_config.CustomPkgPrefix)+1:]
-	// 	} else if g_config.CustomVendorDir != "" {
-	// 		// Try custom vendor dir.
-	// 		root = filepath.Join(context.BzlProjectRoot, "bazel-bin", g_config.CustomVendorDir)
-	// 		impath = imp
-	// 	}
-	//
-	// 	if root != "" && impath != "" {
-	// 		// There might be more than one ".a" files in the pkg path with bazel.
-	// 		// But the best practice is to keep one go_library build target in each
-	// 		// pakcage directory so that it follows the standard Go package
-	// 		// structure. Thus here we assume there is at most one ".a" file existing
-	// 		// in the pkg path.
-	// 		if d, err := os.Open(filepath.Join(root, impath)); err == nil {
-	// 			defer d.Close()
-	//
-	// 			if fis, err := d.Readdir(-1); err == nil {
-	// 				for _, fi := range fis {
-	// 					if !fi.IsDir() && filepath.Ext(fi.Name()) == ".a" {
-	// 						pkg_path := filepath.Join(root, impath, fi.Name())
-	// 						log_found_package_maybe(imp, pkg_path)
-	// 						return pkg_path, true
-	// 					}
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// }
-
 	if context.CurrentPackagePath != "" {
 		// Try vendor path first, see GO15VENDOREXPERIMENT.
 		// We don't check this environment variable however, seems like there is
