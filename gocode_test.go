@@ -77,6 +77,59 @@ func TestGocode(t *testing.T) {
 	}
 }
 
+func TestGOOS(t *testing.T) {
+	conf, err := newConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" {
+		conf.GOOS = "windows"
+	} else {
+		conf.GOOS = "linux"
+	}
+	if err := tests[0].Check(conf); err != nil {
+		t.Error(err)
+	}
+	if conf.daemon.context.GOOS != conf.GOOS {
+		t.Errorf("Expected GOOS to be (%s) got (%s)", conf.GOOS, conf.daemon.context.GOOS)
+	}
+}
+
+// Test that multiple Configs do not interfere with each other.
+func TestMultipleConfig(t *testing.T) {
+	var err error
+	var confs [3]*Config
+	for i := 0; i < len(confs); i++ {
+		confs[i], err = newConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	confs[2].GOPATH = ""
+
+	wg := new(sync.WaitGroup)
+	wg.Add(len(confs))
+	start := make(chan struct{})
+	for i := range confs {
+		go func(c *Config) {
+			defer wg.Done()
+			<-start
+			for _, test := range tests {
+				if err := test.Check(c); err != nil {
+					t.Error(err)
+				}
+			}
+		}(confs[i])
+	}
+	close(start)
+	wg.Wait()
+
+	if confs[2].daemon.context.GOPATH != confs[2].GOPATH {
+		t.Errorf("Expected GOPATH to equal (%q) got (%q)", confs[2].GOPATH,
+			confs[2].daemon.context.GOPATH)
+	}
+}
+
 // Parallel stress test.
 func TestParallel_Stress(t *testing.T) {
 	if testing.Short() {
@@ -310,6 +363,7 @@ func newConfig() (*Config, error) {
 	c := Config{
 		GOROOT: runtime.GOROOT(),
 		GOPATH: os.Getenv("GOPATH"),
+		GOOS:   runtime.GOOS,
 	}
 	if c.GOROOT == "" {
 		return nil, fmt.Errorf("GOROOT must be set")

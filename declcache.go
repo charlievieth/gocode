@@ -188,14 +188,14 @@ func find_go_dag_package(imp, filedir string) (string, bool) {
 
 // autobuild compares the mod time of the source files of the package, and if any of them is newer
 // than the package object file will rebuild it.
-func autobuild(p *build.Package) error {
+func autobuild(p *build.Package, ctxt *package_lookup_context) error {
 	if p.Dir == "" {
 		return fmt.Errorf("no files to build")
 	}
 	ps, err := os.Stat(p.PkgObj)
 	if err != nil {
 		// Assume package file does not exist and build for the first time.
-		return build_package(p)
+		return build_package(p, ctxt)
 	}
 	pt := ps.ModTime()
 	fs, err := readdir_lstat(p.Dir)
@@ -208,7 +208,7 @@ func autobuild(p *build.Package) error {
 		}
 		if f.ModTime().After(pt) {
 			// Source file is newer than package file; rebuild.
-			return build_package(p)
+			return build_package(p, ctxt)
 		}
 	}
 	return nil
@@ -217,7 +217,7 @@ func autobuild(p *build.Package) error {
 // build_package builds the package by calling `go install package/import`. If everything compiles
 // correctly, the newly compiled package should then be in the usual place in the `$GOPATH/pkg`
 // directory, and gocode will pick it up from there.
-func build_package(p *build.Package) error {
+func build_package(p *build.Package, ctxt *package_lookup_context) error {
 	if g_debug {
 		log.Printf("-------------------")
 		log.Printf("rebuilding package %s", p.Name)
@@ -225,15 +225,18 @@ func build_package(p *build.Package) error {
 		log.Printf("package object: %s", p.PkgObj)
 		log.Printf("package source dir: %s", p.Dir)
 		log.Printf("package source files: %v", p.GoFiles)
-		log.Printf("GOPATH: %v", gocodeDaemon.context.GOPATH)
-		log.Printf("GOROOT: %v", gocodeDaemon.context.GOROOT)
+		log.Printf("GOPATH: %v", ctxt.GOPATH)
+		log.Printf("GOROOT: %v", ctxt.GOROOT)
 	}
 	env := os.Environ()
 	for i, v := range env {
-		if strings.HasPrefix(v, "GOPATH=") {
-			env[i] = "GOPATH=" + gocodeDaemon.context.GOPATH
-		} else if strings.HasPrefix(v, "GOROOT=") {
-			env[i] = "GOROOT=" + gocodeDaemon.context.GOROOT
+		switch {
+		case strings.HasPrefix(v, "GOPATH="):
+			env[i] = "GOPATH=" + ctxt.GOPATH
+		case strings.HasPrefix(v, "GOROOT="):
+			env[i] = "GOROOT=" + ctxt.GOROOT
+		case strings.HasPrefix(v, "GOOS=") && ctxt.GOOS != "":
+			env[i] = "GOOS=" + ctxt.GOOS
 		}
 	}
 
@@ -253,9 +256,9 @@ func build_package(p *build.Package) error {
 
 // executes autobuild function if autobuild option is enabled, logs error and
 // ignores it
-func try_autobuild(p *build.Package) {
+func try_autobuild(p *build.Package, ctxt *package_lookup_context) {
 	if g_config.Autobuild() {
-		err := autobuild(p)
+		err := autobuild(p, ctxt)
 		if err != nil && g_debug {
 			log.Printf("Autobuild error: %s\n", err)
 		}
@@ -368,7 +371,7 @@ func find_global_file(imp string, context *package_lookup_context) (string, bool
 		for {
 			limp := filepath.Join(package_path, "vendor", imp)
 			if p, err := context.Import(limp, "", build.AllowBinary|build.FindOnly); err == nil {
-				try_autobuild(p)
+				try_autobuild(p, context)
 				if file_exists(p.PkgObj) {
 					log_found_package_maybe(imp, p.PkgObj)
 					return p.PkgObj, true
@@ -387,7 +390,7 @@ func find_global_file(imp string, context *package_lookup_context) (string, bool
 	}
 
 	if p, err := context.Import(imp, "", build.AllowBinary|build.FindOnly); err == nil {
-		try_autobuild(p)
+		try_autobuild(p, context)
 		if file_exists(p.PkgObj) {
 			log_found_package_maybe(imp, p.PkgObj)
 			return p.PkgObj, true

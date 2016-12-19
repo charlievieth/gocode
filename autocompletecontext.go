@@ -140,13 +140,15 @@ type auto_complete_context struct {
 
 	pcache    package_cache // packages cache
 	declcache *decl_cache   // top-level declarations cache
+	daemon    *daemon
 }
 
-func new_auto_complete_context(pcache package_cache, declcache *decl_cache) *auto_complete_context {
+func new_auto_complete_context(pcache package_cache, declcache *decl_cache, daemon *daemon) *auto_complete_context {
 	c := new(auto_complete_context)
 	c.current = new_auto_complete_file("", declcache.context)
 	c.pcache = pcache
 	c.declcache = declcache
+	c.daemon = daemon
 	return c
 }
 
@@ -229,7 +231,7 @@ func (c *auto_complete_context) get_candidates_from_decl(cc cursor_context, clas
 }
 
 func (c *auto_complete_context) get_import_candidates(partial string, b *out_buffers) {
-	pkgdirs := gocodeDaemon.context.pkg_dirs()
+	pkgdirs := c.daemon.context.pkg_dirs()
 	resultSet := map[string]struct{}{}
 	for _, pkgdir := range pkgdirs {
 		// convert srcpath to pkgpath and get candidates

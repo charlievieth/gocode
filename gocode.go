@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 const g_debug = false
@@ -43,19 +44,27 @@ func (c Candidate) String() string {
 type Config struct {
 	GOROOT        string
 	GOPATH        string
+	GOOS          string
 	InstallSuffix string
 	AutoBuild     bool
 	Builtins      bool // propose builtin functions
+	daemon        *daemon
+	state         uint32
+}
+
+func (c *Config) lazyInit() {
+	if atomic.CompareAndSwapUint32(&c.state, 0, 1) {
+		if c.daemon != nil {
+			panic("gocode.Config: unexpected init state")
+		}
+		c.daemon = newDaemon()
+	}
 }
 
 func (c *Config) Complete(file []byte, name string, cursor int) []Candidate {
-	if gocodeDaemon == nil {
-		gocodeDaemon = newDaemon()
-	}
-	return gocodeDaemon.complete(file, name, cursor, c)
+	c.lazyInit()
+	return c.daemon.complete(file, name, cursor, c)
 }
-
-var gocodeDaemon = newDaemon()
 
 type daemon struct {
 	autocomplete *auto_complete_context
@@ -69,13 +78,13 @@ func newDaemon() *daemon {
 	ctxt := build.Default
 	ctxt.GOPATH = os.Getenv("GOPATH")
 	ctxt.GOROOT = runtime.GOROOT()
-	d := daemon{
+	d := &daemon{
 		context:  package_lookup_context{Context: ctxt},
 		pkgcache: new_package_cache(),
 	}
 	d.declcache = new_decl_cache(&d.context)
-	d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
-	return &d
+	d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache, d)
+	return d
 }
 
 var NoCandidates = []Candidate{}
@@ -115,19 +124,22 @@ func (d *daemon) update(conf *Config) {
 	if !d.same(conf) {
 		d.context.GOPATH = conf.GOPATH
 		d.context.GOROOT = conf.GOROOT
+		if conf.GOOS != "" {
+			d.context.GOOS = conf.GOOS
+		}
 		d.context.InstallSuffix = conf.InstallSuffix
 		d.pkgcache = new_package_cache()
 		d.declcache = new_decl_cache(&d.context)
-		d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
+		d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache, d)
 
-		g_config.libPath = d.libPath() // global config
-		g_config.proposeBuiltins = conf.Builtins
+		g_config.SetLibPath(d.libPath()) // global config
 	}
 }
 
 func (d *daemon) same(conf *Config) bool {
 	return d.context.GOPATH == conf.GOPATH &&
 		d.context.GOROOT == conf.GOROOT &&
+		d.context.GOOS == conf.GOOS &&
 		d.context.InstallSuffix == conf.InstallSuffix
 }
 

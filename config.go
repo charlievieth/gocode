@@ -1,6 +1,10 @@
 package gocode
 
-import "sync"
+import (
+	"sync/atomic"
+
+	"sync"
+)
 
 //-------------------------------------------------------------------------
 // config
@@ -10,46 +14,46 @@ import "sync"
 //-------------------------------------------------------------------------
 
 type config struct {
-	proposeBuiltins    bool   `json:"propose-builtins"`
+	proposeBuiltins    uint32 `json:"propose-builtins"`
+	autobuild          uint32 `json:"autobuild"`
+	unimportedPackages uint32 `json:"unimported-packages"`
 	libPath            string `json:"lib-path"`
-	autobuild          bool   `json:"autobuild"`
 	forceDebugOutput   string `json:"force-debug-output"`
-	unimportedPackages bool   `json:"unimported-packages"`
 	mu                 sync.RWMutex
 
 	// Excludes: PackageLookupMode, used to enable 'gb' lookup.
 }
 
-func (c *config) UnimportedPackages() bool {
-	c.mu.RLock()
-	b := c.unimportedPackages
-	c.mu.RUnlock()
-	return b
-}
-
-func (c *config) SetUnimportedPackages(b bool) {
-	c.mu.Lock()
-	c.unimportedPackages = b
-	c.mu.Unlock()
-}
-
 func (c *config) ProposeBuiltins() (b bool) {
-	c.mu.RLock()
-	b = c.proposeBuiltins
-	c.mu.RUnlock()
-	return
+	return atomic.LoadUint32(&c.proposeBuiltins) == 1
 }
 
 func (c *config) SetProposeBuiltins(b bool) {
-	c.mu.Lock()
-	c.proposeBuiltins = b
-	c.mu.Unlock()
+	c.storeBool(&c.proposeBuiltins, b)
+}
+
+func (c *config) Autobuild() (b bool) {
+	return atomic.LoadUint32(&c.autobuild) == 1
 }
 
 func (c *config) SetAutoBuild(b bool) {
-	c.mu.Lock()
-	c.autobuild = b
-	c.mu.Unlock()
+	c.storeBool(&c.autobuild, b)
+}
+
+func (c *config) UnimportedPackages() bool {
+	return atomic.LoadUint32(&c.unimportedPackages) == 1
+}
+
+func (c *config) SetUnimportedPackages(b bool) {
+	c.storeBool(&c.unimportedPackages, b)
+}
+
+func (c *config) storeBool(addr *uint32, b bool) {
+	n := uint32(0)
+	if b {
+		n = 1
+	}
+	atomic.StoreUint32(addr, n)
 }
 
 func (c *config) LibPath() (s string) {
@@ -59,10 +63,10 @@ func (c *config) LibPath() (s string) {
 	return
 }
 
-func (c *config) Autobuild() (b bool) {
-	c.mu.RLock()
-	b = c.autobuild
-	c.mu.RUnlock()
+func (c *config) SetLibPath(s string) {
+	c.mu.Lock()
+	c.libPath = s
+	c.mu.Unlock()
 	return
 }
 
@@ -74,9 +78,9 @@ func (c *config) ForceDebugOutput() (s string) {
 }
 
 var g_config = config{
-	proposeBuiltins:  false,
-	libPath:          "",
-	autobuild:        false,
-	forceDebugOutput: "",
-	mu:               sync.RWMutex{},
+	proposeBuiltins:    0,
+	autobuild:          0,
+	unimportedPackages: 0,
+	libPath:            "",
+	forceDebugOutput:   "",
 }
