@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/charlievieth/gocode/fs"
 )
 
 // our own readdir, which skips the files it cannot lstat
@@ -28,7 +30,7 @@ func readdir_lstat(name string) ([]os.FileInfo, error) {
 
 	out := make([]os.FileInfo, 0, len(names))
 	for _, lname := range names {
-		s, err := os.Lstat(filepath.Join(name, lname))
+		s, err := fs.Lstat(filepath.Join(name, lname))
 		if err != nil {
 			continue
 		}
@@ -63,7 +65,7 @@ func filter_out_shebang(data []byte) ([]byte, int) {
 }
 
 func file_exists(filename string) bool {
-	_, err := os.Stat(filename)
+	_, err := fs.Stat(filename)
 	if err != nil {
 		return false
 	}
@@ -71,7 +73,7 @@ func file_exists(filename string) bool {
 }
 
 func is_dir(path string) bool {
-	fi, err := os.Stat(path)
+	fi, err := fs.Stat(path)
 	return err == nil && fi.IsDir()
 }
 
@@ -135,7 +137,7 @@ func find_gb_project_root(path string) (string, error) {
 	start := path
 	for path != "/" {
 		root := filepath.Join(path, "src")
-		if _, err := os.Stat(root); err != nil {
+		if _, err := fs.Stat(root); err != nil {
 			if os.IsNotExist(err) {
 				path = filepath.Dir(path)
 				continue

@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/charlievieth/gocode/fs"
 )
 
 //-------------------------------------------------------------------------
@@ -72,7 +74,7 @@ func new_decl_file_cache(name string, context *package_lookup_context) *decl_fil
 }
 
 func (f *decl_file_cache) update() {
-	stat, err := os.Stat(f.name)
+	stat, err := fs.Stat(f.name)
 	if err != nil {
 		f.decls = nil
 		f.error = err
@@ -192,7 +194,7 @@ func autobuild(p *build.Package) error {
 	if p.Dir == "" {
 		return fmt.Errorf("no files to build")
 	}
-	ps, err := os.Stat(p.PkgObj)
+	ps, err := fs.Stat(p.PkgObj)
 	if err != nil {
 		// Assume package file does not exist and build for the first time.
 		return build_package(p)

@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"os"
 	"strings"
+
+	"github.com/charlievieth/gocode/fs"
 )
 
 type package_parser interface {
@@ -74,7 +75,7 @@ func (m *package_file_cache) update_cache() {
 		return
 	}
 	fname := m.find_file()
-	stat, err := os.Stat(fname)
+	stat, err := fs.Stat(fname)
 	if err != nil {
 		return
 	}
