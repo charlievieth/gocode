@@ -21,20 +21,19 @@ func readdir_lstat(name string) ([]os.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 
 	names, err := f.Readdirnames(-1)
+	f.Close()
 	if err != nil {
 		return nil, err
 	}
 
 	out := make([]os.FileInfo, 0, len(names))
 	for _, lname := range names {
-		s, err := fs.Lstat(filepath.Join(name, lname))
-		if err != nil {
-			continue
+		s, err := fs.Lstat(name + string(filepath.Separator) + lname)
+		if err == nil {
+			out = append(out, s)
 		}
-		out = append(out, s)
 	}
 	return out, nil
 }
@@ -56,7 +55,7 @@ func readdir(dirname string) []os.FileInfo {
 // returns truncated 'data' and amount of bytes skipped (for cursor pos adjustment)
 func filter_out_shebang(data []byte) ([]byte, int) {
 	if len(data) > 2 && data[0] == '#' && data[1] == '!' {
-		newline := bytes.Index(data, []byte("\n"))
+		newline := bytes.IndexByte(data, '\n')
 		if newline != -1 && len(data) > newline+1 {
 			return data[newline+1:], newline + 1
 		}
@@ -66,10 +65,7 @@ func filter_out_shebang(data []byte) ([]byte, int) {
 
 func file_exists(filename string) bool {
 	_, err := fs.Stat(filename)
-	if err != nil {
-		return false
-	}
-	return true
+	return err == nil
 }
 
 func is_dir(path string) bool {
