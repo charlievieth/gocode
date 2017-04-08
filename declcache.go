@@ -121,7 +121,7 @@ func append_to_top_decls(decls map[string]*decl, decl ast.Decl, scope *scope) {
 		for i, name := range data.names {
 			typ, v, vi := data.type_value_index(i)
 
-			d := new_decl_full(name.Name, class, 0, typ, v, vi, scope)
+			d := new_decl_full(name.Name, class, ast_decl_flags(data.decl), typ, v, vi, scope)
 			if d == nil {
 				return
 			}
@@ -453,7 +453,7 @@ func (ctxt *package_lookup_context) gopath() []string {
 	return all
 }
 
-func (ctxt *package_lookup_context) pkg_dirs() []string {
+func (ctxt *package_lookup_context) pkg_dirs() (string, []string) {
 	pkgdir := ctxt.GOOS + "_" + ctxt.GOARCH
 
 	all := make([]string, 0, 2)
@@ -469,7 +469,7 @@ func (ctxt *package_lookup_context) pkg_dirs() []string {
 			all = append(all, dir)
 		}
 	}
-	return all
+	return ctxt.CurrentPackagePath, all
 }
 
 type decl_cache struct {

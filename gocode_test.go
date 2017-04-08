@@ -71,8 +71,7 @@ func TestInit(t *testing.T) {
 func TestGocode(t *testing.T) {
 	for _, test := range tests {
 		if err := test.Check(conf); err != nil {
-			// t.Fatal(err)
-			t.Errorf("%s: %s\n", test.Name, err)
+			t.Error(err)
 		}
 	}
 }
@@ -202,6 +201,31 @@ type Test struct {
 	File   []byte
 	Cursor int
 	Result []string
+	Fail   bool // Expected to fail as indicated by a "exp.fail" file
+}
+
+// Store expected test failures to prevent printing duplicates.
+var ExpectedFailures = make(map[string]bool)
+var ExpectedFailuresMu sync.Mutex
+
+// Expected, returns error err if the test is expected to pass, otherwise it
+// returns nil (the test is expected to fail).
+func (t *Test) Expected(err error) error {
+	if t.Fail {
+		// Print expected failures if verbose flag is set
+		if testing.Verbose() {
+			// Lock for parallel tests
+			ExpectedFailuresMu.Lock()
+			if !ExpectedFailures[t.Name] {
+				fmt.Fprintf(os.Stderr, "\tFailed expected test: %s\n",
+					filepath.Base(filepath.Dir(t.Name)))
+				ExpectedFailures[t.Name] = true
+			}
+			ExpectedFailuresMu.Unlock()
+		}
+		return nil
+	}
+	return err
 }
 
 func (t Test) Check(conf *Config) error {
@@ -214,13 +238,16 @@ func (t Test) Check(conf *Config) error {
 		return fmt.Errorf("Check: nil Candidates (%+v)", conf)
 	}
 	if len(cs) != len(t.Result) {
-		return fmt.Errorf("count: expected %d got %d: %s", len(t.Result), len(cs), fn)
+		return t.Expected(fmt.Errorf("count: expected %d got %d: %s", len(t.Result), len(cs), fn))
 	}
 	for i, c := range cs {
 		r := t.Result[i]
 		if c.String() != r {
-			return fmt.Errorf("candidate: expected '%s' got '%s': %s", r, c, fn)
+			return t.Expected(fmt.Errorf("candidate: expected '%s' got '%s': %s", r, c, fn))
 		}
+	}
+	if t.Fail {
+		return errors.New("expected test to fail, but it passed!!")
 	}
 	return nil
 }
@@ -263,6 +290,8 @@ func newTest(path string) (*Test, error) {
 			if err != nil {
 				return nil, err
 			}
+		case "exp.fail":
+			t.Fail = true
 		default:
 			if strings.HasPrefix(fn, "cursor") {
 				n := strings.IndexByte(fn, '.')
