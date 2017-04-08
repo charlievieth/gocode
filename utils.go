@@ -208,42 +208,19 @@ func print_backtrace(err interface{}) {
 // at the same time.
 //-------------------------------------------------------------------------
 
-type file_read_request struct {
-	filename string
-	out      chan file_read_response
-}
-
-type file_read_response struct {
-	data  []byte
-	error error
-}
-
 type file_reader_type struct {
-	in chan file_read_request
+	gate chan struct{}
 }
 
 func new_file_reader() *file_reader_type {
-	this := new(file_reader_type)
-	this.in = make(chan file_read_request)
-	go func() {
-		var rsp file_read_response
-		for {
-			req := <-this.in
-			rsp.data, rsp.error = ioutil.ReadFile(req.filename)
-			req.out <- rsp
-		}
-	}()
-	return this
+	return &file_reader_type{gate: make(chan struct{}, 50)}
 }
 
-func (this *file_reader_type) read_file(filename string) ([]byte, error) {
-	req := file_read_request{
-		filename,
-		make(chan file_read_response),
-	}
-	this.in <- req
-	rsp := <-req.out
-	return rsp.data, rsp.error
+func (r *file_reader_type) read_file(filename string) ([]byte, error) {
+	r.gate <- struct{}{}
+	b, err := ioutil.ReadFile(filename)
+	<-r.gate
+	return b, err
 }
 
 var file_reader = new_file_reader()
