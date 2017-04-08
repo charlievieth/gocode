@@ -151,16 +151,12 @@ func append_to_top_decls(decls map[string]*decl, decl ast.Decl, scope *scope) {
 }
 
 func abs_path_for_package(filename, p string, context *package_lookup_context) (string, bool) {
-	dir, _ := filepath.Split(filename)
 	if len(p) == 0 {
 		return "", false
 	}
 	if p[0] == '.' {
-		return fmt.Sprintf("%s.a", filepath.Join(dir, p)), true
-	}
-	pkg, ok := find_go_dag_package(p, dir)
-	if ok {
-		return pkg, true
+		dir, _ := filepath.Split(filename)
+		return dir + string(filepath.Separator) + p + ".a", true
 	}
 	return find_global_file(p, context)
 }
@@ -176,16 +172,6 @@ func path_and_alias(imp *ast.ImportSpec) (string, string) {
 		alias = imp.Name.Name
 	}
 	return path, alias
-}
-
-func find_go_dag_package(imp, filedir string) (string, bool) {
-	// Support godag directory structure
-	dir, pkg := filepath.Split(imp)
-	godag_pkg := filepath.Join(filedir, "..", dir, "_obj", pkg+".a")
-	if file_exists(godag_pkg) {
-		return godag_pkg, true
-	}
-	return "", false
 }
 
 // autobuild compares the mod time of the source files of the package, and if any of them is newer
