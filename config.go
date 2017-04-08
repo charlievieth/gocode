@@ -1,6 +1,9 @@
 package gocode
 
-import "sync"
+import (
+	"path/filepath"
+	"sync"
+)
 
 //-------------------------------------------------------------------------
 // config
@@ -9,20 +12,23 @@ import "sync"
 // the config is located somewhere in ~/.config/gocode directory.
 //-------------------------------------------------------------------------
 
+var g_config config // global config
+
 type config struct {
-	proposeBuiltins    bool   `json:"propose-builtins"`
-	libPath            string `json:"lib-path"`
-	autobuild          bool   `json:"autobuild"`
-	forceDebugOutput   string `json:"force-debug-output"`
-	unimportedPackages bool   `json:"unimported-packages"`
+	proposeBuiltins    bool     `json:"propose-builtins"`
+	libPath            string   `json:"lib-path"`
+	pathList           []string `json:"path_list"`
+	autobuild          bool     `json:"autobuild"`
+	forceDebugOutput   string   `json:"force-debug-output"`
+	unimportedPackages bool     `json:"unimported-packages"`
 	mu                 sync.RWMutex
 
 	// Excludes: PackageLookupMode, used to enable 'gb' lookup.
 }
 
-func (c *config) UnimportedPackages() bool {
+func (c *config) UnimportedPackages() (b bool) {
 	c.mu.RLock()
-	b := c.unimportedPackages
+	b = c.unimportedPackages
 	c.mu.RUnlock()
 	return b
 }
@@ -59,6 +65,21 @@ func (c *config) LibPath() (s string) {
 	return
 }
 
+func (c *config) SetLibPath(s string) {
+	c.mu.Lock()
+	c.libPath = s
+	c.pathList = filepath.SplitList(s)
+	c.mu.Unlock()
+	return
+}
+
+func (c *config) PathList() (a []string) {
+	c.mu.RLock()
+	a = c.pathList
+	c.mu.RUnlock()
+	return a
+}
+
 func (c *config) Autobuild() (b bool) {
 	c.mu.RLock()
 	b = c.autobuild
@@ -71,12 +92,4 @@ func (c *config) ForceDebugOutput() (s string) {
 	s = c.forceDebugOutput
 	c.mu.RUnlock()
 	return
-}
-
-var g_config = config{
-	proposeBuiltins:  false,
-	libPath:          "",
-	autobuild:        false,
-	forceDebugOutput: "",
-	mu:               sync.RWMutex{},
 }

@@ -120,7 +120,7 @@ func (d *daemon) update(conf *Config) {
 		d.declcache = new_decl_cache(&d.context)
 		d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
 
-		g_config.libPath = d.libPath() // global config
+		g_config.SetLibPath(d.libPath()) // global config
 		g_config.proposeBuiltins = conf.Builtins
 	}
 }

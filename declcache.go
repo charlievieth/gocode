@@ -270,6 +270,8 @@ func log_build_context(context *package_lookup_context) {
 // import, and a boolean stating whether such path is valid.
 // TODO: Return only one value, possibly empty string if not found.
 func find_global_file(imp string, context *package_lookup_context) (string, bool) {
+	const sep = string(filepath.Separator)
+
 	// gocode synthetically generates the builtin package
 	// "unsafe", since the "unsafe.a" package doesn't really exist.
 	// Thus, when the user request for the package "unsafe" we
@@ -279,18 +281,18 @@ func find_global_file(imp string, context *package_lookup_context) (string, bool
 		return "unsafe", true
 	}
 
-	pkgfile := fmt.Sprintf("%s.a", imp)
+	pkgfile := imp + ".a"
 
 	// if lib-path is defined, use it
 	if g_config.LibPath() != "" {
-		for _, p := range filepath.SplitList(g_config.LibPath()) {
-			pkg_path := filepath.Join(p, pkgfile)
+		for _, p := range g_config.PathList() {
+			pkg_path := p + sep + pkgfile
 			if file_exists(pkg_path) {
 				log_found_package_maybe(imp, pkg_path)
 				return pkg_path, true
 			}
 			// Also check the relevant pkg/OS_ARCH dir for the libpath, if provided.
-			pkgdir := fmt.Sprintf("%s_%s", context.GOOS, context.GOARCH)
+			pkgdir := context.GOOS + "_" + context.GOARCH
 			pkg_path = filepath.Join(p, "pkg", pkgdir, pkgfile)
 			if file_exists(pkg_path) {
 				log_found_package_maybe(imp, pkg_path)
@@ -354,7 +356,7 @@ func find_global_file(imp string, context *package_lookup_context) (string, bool
 		// So, whatever, let's just pretend it's always on.
 		package_path := context.CurrentPackagePath
 		for {
-			limp := filepath.Join(package_path, "vendor", imp)
+			limp := fast_join(package_path, "vendor", imp)
 			if p, err := context.Import(limp, "", build.AllowBinary|build.FindOnly); err == nil {
 				try_autobuild(p)
 				if file_exists(p.PkgObj) {
@@ -446,13 +448,13 @@ func (ctxt *package_lookup_context) pkg_dirs() (string, []string) {
 
 	all := make([]string, 0, 2)
 	if ctxt.GOROOT != "" {
-		dir := filepath.Join(ctxt.GOROOT, "pkg", pkgdir)
+		dir := fast_join(ctxt.GOROOT, "pkg", pkgdir)
 		if is_dir(dir) {
 			all = append(all, dir)
 		}
 	}
 	for _, p := range ctxt.gopath() {
-		dir := filepath.Join(p, "pkg", pkgdir)
+		dir := fast_join(p, "pkg", pkgdir)
 		if is_dir(dir) {
 			all = append(all, dir)
 		}

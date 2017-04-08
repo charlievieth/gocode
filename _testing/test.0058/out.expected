@@ -1,0 +1,3 @@
+Found 2 candidates:
+  func Lstat(name string) (os.FileInfo, error)
+  func Stat(name string) (os.FileInfo, error)

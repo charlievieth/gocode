@@ -2,9 +2,7 @@
 
 package fs
 
-import (
-	"os"
-)
+import "os"
 
 // Lstat returns a FileInfo describing the named file.
 // If the file is a symbolic link, the returned FileInfo

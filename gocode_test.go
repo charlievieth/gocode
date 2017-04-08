@@ -202,6 +202,7 @@ type Test struct {
 	Cursor int
 	Result []string
 	Fail   bool // Expected to fail as indicated by a "exp.fail" file
+	GOPATH bool // Requires GOPATH to be set
 }
 
 // Store expected test failures to prevent printing duplicates.
@@ -210,20 +211,25 @@ var ExpectedFailuresMu sync.Mutex
 
 // Expected, returns error err if the test is expected to pass, otherwise it
 // returns nil (the test is expected to fail).
-func (t *Test) Expected(err error) error {
-	if t.Fail {
-		// Print expected failures if verbose flag is set
-		if testing.Verbose() {
-			// Lock for parallel tests
-			ExpectedFailuresMu.Lock()
-			if !ExpectedFailures[t.Name] {
-				fmt.Fprintf(os.Stderr, "\tFailed expected test: %s\n",
-					filepath.Base(filepath.Dir(t.Name)))
-				ExpectedFailures[t.Name] = true
+func (t *Test) Expected(conf *Config, err error) error {
+	if err != nil {
+		switch {
+		case t.Fail:
+			// Print expected failures if verbose flag is set
+			if testing.Verbose() {
+				// Lock for parallel tests
+				ExpectedFailuresMu.Lock()
+				if !ExpectedFailures[t.Name] {
+					fmt.Fprintf(os.Stderr, "\tFailed expected test: %s\n",
+						filepath.Base(filepath.Dir(t.Name)))
+					ExpectedFailures[t.Name] = true
+				}
+				ExpectedFailuresMu.Unlock()
 			}
-			ExpectedFailuresMu.Unlock()
+			return nil
+		case t.GOPATH && conf.GOPATH == "":
+			return nil
 		}
-		return nil
 	}
 	return err
 }
@@ -238,12 +244,12 @@ func (t Test) Check(conf *Config) error {
 		return fmt.Errorf("Check: nil Candidates (%+v)", conf)
 	}
 	if len(cs) != len(t.Result) {
-		return t.Expected(fmt.Errorf("count: expected %d got %d: %s", len(t.Result), len(cs), fn))
+		return t.Expected(conf, fmt.Errorf("count: expected %d got %d: %s", len(t.Result), len(cs), fn))
 	}
 	for i, c := range cs {
 		r := t.Result[i]
 		if c.String() != r {
-			return t.Expected(fmt.Errorf("candidate: expected '%s' got '%s': %s", r, c, fn))
+			return t.Expected(conf, fmt.Errorf("candidate: expected '%s' got '%s': %s", r, c, fn))
 		}
 	}
 	if t.Fail {
@@ -292,6 +298,8 @@ func newTest(path string) (*Test, error) {
 			}
 		case "exp.fail":
 			t.Fail = true
+		case "gopath.pkg":
+			t.GOPATH = true
 		default:
 			if strings.HasPrefix(fn, "cursor") {
 				n := strings.IndexByte(fn, '.')

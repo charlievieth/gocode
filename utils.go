@@ -15,6 +15,35 @@ import (
 	"github.com/charlievieth/gocode/fs"
 )
 
+// Fast variant of filepath.Join(), filepath.Clean is not called on the result.
+func fast_join(a ...string) string {
+	const sep = string(filepath.Separator)
+	switch len(a) {
+	case 0:
+		return ""
+	case 1:
+		return a[0]
+	case 2:
+		return a[0] + sep + a[1]
+	case 3:
+		return a[0] + sep + a[1] + sep + a[2]
+	case 4:
+		return a[0] + sep + a[1] + sep + a[2] + sep + a[3]
+	}
+	n := len(sep) * (len(a) - 1)
+	for i := 0; i < len(a); i++ {
+		n += len(a[i])
+	}
+
+	b := make([]byte, n)
+	bp := copy(b, a[0])
+	for _, s := range a[1:] {
+		bp += copy(b[bp:], sep)
+		bp += copy(b[bp:], s)
+	}
+	return string(b)
+}
+
 // our own readdir, which skips the files it cannot lstat
 func readdir_lstat(name string) ([]os.FileInfo, error) {
 	f, err := os.Open(name)
