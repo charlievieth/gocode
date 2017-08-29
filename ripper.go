@@ -3,6 +3,7 @@ package gocode
 import (
 	"go/scanner"
 	"go/token"
+	"sync"
 )
 
 // All the code in this file serves single purpose:
@@ -30,6 +31,13 @@ func (this *tok_collection) next(s *scanner.Scanner) bool {
 	return true
 }
 
+func (this *tok_collection) offset(p token.Pos) (pos int) {
+	if f := this.fset.File(p); f != nil {
+		pos = int(p) - f.Base()
+	}
+	return
+}
+
 func (this *tok_collection) find_decl_beg(pos int) int {
 	lowest := 0
 	lowpos := -1
@@ -46,7 +54,7 @@ func (this *tok_collection) find_decl_beg(pos int) int {
 
 		if cur < lowest {
 			lowest = cur
-			lowpos = this.fset.Position(t.pos).Offset
+			lowpos = this.offset(t.pos)
 			lowi = i
 		}
 	}
@@ -61,7 +69,7 @@ func (this *tok_collection) find_decl_beg(pos int) int {
 			cur--
 		}
 		if t.tok == token.SEMICOLON && cur == lowest {
-			lowpos = this.fset.Position(t.pos).Offset
+			lowpos = this.offset(t.pos)
 			break
 		}
 	}
@@ -89,7 +97,7 @@ func (this *tok_collection) find_decl_end(pos int) int {
 
 		if cur > highest {
 			highest = cur
-			highpos = this.fset.Position(t.pos).Offset
+			highpos = this.offset(t.pos)
 		}
 	}
 
@@ -100,7 +108,7 @@ func (this *tok_collection) find_outermost_scope(cursor int) (int, int) {
 	pos := 0
 
 	for i, t := range this.tokens {
-		if cursor <= this.fset.Position(t.pos).Offset {
+		if cursor <= this.offset(t.pos) {
 			break
 		}
 		pos = i
@@ -136,6 +144,39 @@ func (this *tok_collection) rip_off_decl(file []byte, cursor int) (int, []byte, 
 }
 
 func rip_off_decl(file []byte, cursor int) (int, []byte, []byte) {
-	var tc tok_collection
-	return tc.rip_off_decl(file, cursor)
+	tc := tok_collection{tokens: get_token_slice()}
+	pos, newfile, ripped := tc.rip_off_decl(file, cursor)
+	put_token_slice(tc.tokens)
+	return pos, newfile, ripped
+}
+
+var tokenPool struct {
+	sync.Mutex
+	pool [][]tok_pos_pair
+}
+
+func init() {
+	for i := 0; i < 20; i++ {
+		put_token_slice(make([]tok_pos_pair, 64))
+	}
+}
+
+func get_token_slice() (p []tok_pos_pair) {
+	tokenPool.Lock()
+	if n := len(tokenPool.pool); n != 0 {
+		p = tokenPool.pool[n-1][:0]
+		tokenPool.pool = tokenPool.pool[:n-1]
+	} else {
+		p = make([]tok_pos_pair, 64)
+	}
+	tokenPool.Unlock()
+	return
+}
+
+func put_token_slice(p []tok_pos_pair) {
+	tokenPool.Lock()
+	if len(tokenPool.pool) <= 20 {
+		tokenPool.pool = append(tokenPool.pool, p)
+	}
+	tokenPool.Unlock()
 }
