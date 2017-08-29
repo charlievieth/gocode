@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/charlievieth/buildutil"
+	"github.com/charlievieth/gocode/fs"
 )
 
 //-------------------------------------------------------------------------
@@ -528,24 +529,24 @@ func fixup_packages(filescope *scope, pkgs []package_import, pcache package_cach
 }
 
 func get_other_package_files(filename, packageName string, declcache *decl_cache) []*decl_file_cache {
-	others := find_other_package_files(filename, packageName)
+	files := find_other_package_files(filename, packageName)
 
-	ret := make([]*decl_file_cache, len(others))
+	ret := make([]*decl_file_cache, len(files))
 	done := make(chan *decl_file_cache)
 
-	for _, nm := range others {
-		go func(name string) {
+	for _, p := range files {
+		go func(p *package_file) {
 			defer func() {
 				if err := recover(); err != nil {
 					print_backtrace(err)
 					done <- nil
 				}
 			}()
-			done <- declcache.get_and_update(name)
-		}(nm)
+			done <- declcache.get_and_update(p)
+		}(&p)
 	}
 
-	for i := range others {
+	for i := range files {
 		ret[i] = <-done
 		if ret[i] == nil {
 			panic("One of the decl cache updaters panicked")
@@ -555,50 +556,51 @@ func get_other_package_files(filename, packageName string, declcache *decl_cache
 	return ret
 }
 
-func find_other_package_files(filename, package_name string) []string {
+type package_file struct {
+	path string
+	unix int64
+}
+
+func find_other_package_files(filename, package_name string) []package_file {
+	const non_regular = os.ModeDir | os.ModeSymlink |
+		os.ModeDevice | os.ModeNamedPipe | os.ModeSocket
+
 	if filename == "" {
 		return nil
 	}
 
 	dir, file := filepath.Split(filename)
-	files_in_dir, err := readdir_lstat(dir)
+
+	f, err := os.Open(dir)
+	if err != nil {
+		panic(err)
+	}
+	names, err := f.Readdirnames(-1)
+	f.Close()
 	if err != nil {
 		panic(err)
 	}
 
-	count := 0
-	for _, stat := range files_in_dir {
-		ok, _ := filepath.Match("*.go", stat.Name())
-		if !ok || stat.Name() == file {
+	out := make([]package_file, 0, len(names))
+	for _, lname := range names {
+		if !strings.HasSuffix(lname, ".go") || lname == file {
 			continue
 		}
-		count++
-	}
-
-	out := make([]string, 0, count)
-	for _, stat := range files_in_dir {
-		const non_regular = os.ModeDir | os.ModeSymlink |
-			os.ModeDevice | os.ModeNamedPipe | os.ModeSocket
-
-		ok, _ := filepath.Match("*.go", stat.Name())
-		if !ok || stat.Name() == file || stat.Mode()&non_regular != 0 {
+		fi, err := fs.Lstat(dir + string(filepath.Separator) + lname)
+		if err != nil || fi.Mode()&non_regular != 0 {
 			continue
 		}
-
-		abspath := filepath.Join(dir, stat.Name())
-		if file_package_name(abspath) == package_name {
-			n := len(out)
-			out = out[:n+1]
-			out[n] = abspath
+		abspath := dir + string(filepath.Separator) + lname
+		pkg, err := buildutil.ReadPackageName(abspath, nil)
+		if err != nil {
+			continue
+		}
+		if pkg == package_name {
+			out = append(out, package_file{abspath, fi.ModTime().UnixNano()})
 		}
 	}
 
 	return out
-}
-
-func file_package_name(filename string) string {
-	file, _ := parser.ParseFile(token.NewFileSet(), filename, nil, parser.PackageClauseOnly)
-	return file.Name.Name
 }
 
 func make_decl_set_recursive(set map[string]*decl, scope *scope) {
