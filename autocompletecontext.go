@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charlievieth/buildutil"
 	"github.com/charlievieth/gocode/fs"
 )
 
@@ -591,7 +590,7 @@ func find_other_package_files(filename, package_name string) []package_file {
 			continue
 		}
 		abspath := dir + string(filepath.Separator) + lname
-		pkg, err := buildutil.ReadPackageName(abspath, nil)
+		pkg, err := ReadPackageName(abspath)
 		if err != nil {
 			continue
 		}
