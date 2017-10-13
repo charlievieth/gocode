@@ -253,7 +253,7 @@ func log_build_context(context *package_lookup_context) {
 	log.Printf(" GOARCH: %s\n", context.GOARCH)
 	log.Printf(" BzlProjectRoot: %q\n", context.BzlProjectRoot)
 	log.Printf(" GBProjectRoot: %q\n", context.GBProjectRoot)
-	log.Printf(" lib-path: %q\n", g_config.LibPath)
+	log.Printf(" lib-path: %q\n", g_config.LibPath())
 }
 
 // find_global_file returns the file path of the compiled package corresponding to the specified
