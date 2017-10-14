@@ -550,6 +550,10 @@ func get_other_package_files(filename, packageName string, declcache *decl_cache
 	return ret
 }
 
+func has_go_ext(s string) bool {
+	return len(s) >= len("*.go") && s[len(s)-len(".go"):] == ".go"
+}
+
 func find_other_package_files(filename, package_name string) []string {
 	if filename == "" {
 		return nil
@@ -561,30 +565,18 @@ func find_other_package_files(filename, package_name string) []string {
 		panic(err)
 	}
 
-	count := 0
+	const non_regular = os.ModeDir | os.ModeSymlink |
+		os.ModeDevice | os.ModeNamedPipe | os.ModeSocket
+
+	out := make([]string, 0, 16)
 	for _, stat := range files_in_dir {
-		ok, _ := filepath.Match("*.go", stat.Name())
-		if !ok || stat.Name() == file {
+		name := stat.Name()
+		if !has_go_ext(name) || name == file || stat.Mode()&non_regular != 0 {
 			continue
 		}
-		count++
-	}
-
-	out := make([]string, 0, count)
-	for _, stat := range files_in_dir {
-		const non_regular = os.ModeDir | os.ModeSymlink |
-			os.ModeDevice | os.ModeNamedPipe | os.ModeSocket
-
-		ok, _ := filepath.Match("*.go", stat.Name())
-		if !ok || stat.Name() == file || stat.Mode()&non_regular != 0 {
-			continue
-		}
-
-		abspath := filepath.Join(dir, stat.Name())
+		abspath := dir + string(filepath.Separator) + name
 		if file_package_name(abspath) == package_name {
-			n := len(out)
-			out = out[:n+1]
-			out[n] = abspath
+			out = append(out, abspath)
 		}
 	}
 
