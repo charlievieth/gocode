@@ -10,11 +10,11 @@ import "sync"
 //-------------------------------------------------------------------------
 
 type config struct {
-	proposeBuiltins    bool   `json:"propose-builtins"`
-	libPath            string `json:"lib-path"`
-	autobuild          bool   `json:"autobuild"`
-	forceDebugOutput   string `json:"force-debug-output"`
-	unimportedPackages bool   `json:"unimported-packages"`
+	proposeBuiltins    bool
+	libPath            string
+	autobuild          bool
+	forceDebugOutput   string
+	unimportedPackages bool
 	mu                 sync.RWMutex
 
 	// Excludes: PackageLookupMode, used to enable 'gb' lookup.
