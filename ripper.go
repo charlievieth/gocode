@@ -31,13 +31,6 @@ func (this *tok_collection) next(s *scanner.Scanner) bool {
 	return true
 }
 
-func (this *tok_collection) offset(p token.Pos) (pos int) {
-	if f := this.fset.File(p); f != nil {
-		pos = int(p) - f.Base()
-	}
-	return
-}
-
 func (this *tok_collection) find_decl_beg(pos int) int {
 	lowest := 0
 	lowpos := -1
@@ -54,7 +47,7 @@ func (this *tok_collection) find_decl_beg(pos int) int {
 
 		if cur < lowest {
 			lowest = cur
-			lowpos = this.offset(t.pos)
+			lowpos = this.fset.Position(t.pos).Offset
 			lowi = i
 		}
 	}
@@ -69,7 +62,7 @@ func (this *tok_collection) find_decl_beg(pos int) int {
 			cur--
 		}
 		if t.tok == token.SEMICOLON && cur == lowest {
-			lowpos = this.offset(t.pos)
+			lowpos = this.fset.Position(t.pos).Offset
 			break
 		}
 	}
@@ -97,7 +90,7 @@ func (this *tok_collection) find_decl_end(pos int) int {
 
 		if cur > highest {
 			highest = cur
-			highpos = this.offset(t.pos)
+			highpos = this.fset.Position(t.pos).Offset
 		}
 	}
 
@@ -108,7 +101,7 @@ func (this *tok_collection) find_outermost_scope(cursor int) (int, int) {
 	pos := 0
 
 	for i, t := range this.tokens {
-		if cursor <= this.offset(t.pos) {
+		if cursor <= this.fset.Position(t.pos).Offset {
 			break
 		}
 		pos = i
@@ -147,6 +140,7 @@ func rip_off_decl(file []byte, cursor int) (int, []byte, []byte) {
 	tc := tok_collection{tokens: get_token_slice()}
 	pos, newfile, ripped := tc.rip_off_decl(file, cursor)
 	put_token_slice(tc.tokens)
+	tc.tokens = nil
 	return pos, newfile, ripped
 }
 
