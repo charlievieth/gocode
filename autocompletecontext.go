@@ -2,14 +2,11 @@ package gocode
 
 import (
 	"bytes"
-	"fmt"
 	"go/ast"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
-	"time"
 )
 
 //-------------------------------------------------------------------------
@@ -651,134 +648,4 @@ func check_type_expr(e ast.Expr) bool {
 		return true
 	}
 	return true
-}
-
-//-------------------------------------------------------------------------
-// Status output
-//-------------------------------------------------------------------------
-
-type decl_slice []*decl
-
-func (s decl_slice) Less(i, j int) bool {
-	if s[i].class != s[j].class {
-		return s[i].name < s[j].name
-	}
-	return s[i].class < s[j].class
-}
-func (s decl_slice) Len() int      { return len(s) }
-func (s decl_slice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-
-const (
-	color_red          = "\033[0;31m"
-	color_red_bold     = "\033[1;31m"
-	color_green        = "\033[0;32m"
-	color_green_bold   = "\033[1;32m"
-	color_yellow       = "\033[0;33m"
-	color_yellow_bold  = "\033[1;33m"
-	color_blue         = "\033[0;34m"
-	color_blue_bold    = "\033[1;34m"
-	color_magenta      = "\033[0;35m"
-	color_magenta_bold = "\033[1;35m"
-	color_cyan         = "\033[0;36m"
-	color_cyan_bold    = "\033[1;36m"
-	color_white        = "\033[0;37m"
-	color_white_bold   = "\033[1;37m"
-	color_none         = "\033[0m"
-)
-
-var g_decl_class_to_color = [...]string{
-	decl_const:        color_white_bold,
-	decl_var:          color_magenta,
-	decl_type:         color_cyan,
-	decl_func:         color_green,
-	decl_package:      color_red,
-	decl_methods_stub: color_red,
-}
-
-var g_decl_class_to_string_status = [...]string{
-	decl_const:        "  const",
-	decl_var:          "    var",
-	decl_type:         "   type",
-	decl_func:         "   func",
-	decl_package:      "package",
-	decl_methods_stub: "   stub",
-}
-
-func (c *auto_complete_context) status() string {
-
-	buf := bytes.NewBuffer(make([]byte, 0, 4096))
-	fmt.Fprintf(buf, "Server's GOMAXPROCS == %d\n", runtime.GOMAXPROCS(0))
-	fmt.Fprintf(buf, "\nPackage cache contains %d entries\n", len(c.pcache))
-	fmt.Fprintf(buf, "\nListing these entries:\n")
-	for _, mod := range c.pcache {
-		fmt.Fprintf(buf, "\tname: %s (default alias: %s)\n", mod.name, mod.defalias)
-		fmt.Fprintf(buf, "\timports %d declarations and %d packages\n", len(mod.main.children), len(mod.others))
-		if mod.mtime == -1 {
-			fmt.Fprintf(buf, "\tthis package stays in cache forever (built-in package)\n")
-		} else {
-			mtime := time.Unix(0, mod.mtime)
-			fmt.Fprintf(buf, "\tlast modification time: %s\n", mtime)
-		}
-		fmt.Fprintf(buf, "\n")
-	}
-	if c.current.name != "" {
-		fmt.Fprintf(buf, "Last edited file: %s (package: %s)\n", c.current.name, c.current.package_name)
-		if len(c.others) > 0 {
-			fmt.Fprintf(buf, "\nOther files from the current package:\n")
-		}
-		for _, f := range c.others {
-			fmt.Fprintf(buf, "\t%s\n", f.name)
-		}
-		fmt.Fprintf(buf, "\nListing declarations from files:\n")
-
-		const status_decls = "\t%s%s" + color_none + " " + color_yellow + "%s" + color_none + "\n"
-		const status_decls_children = "\t%s%s" + color_none + " " + color_yellow + "%s" + color_none + " (%d)\n"
-
-		fmt.Fprintf(buf, "\n%s:\n", c.current.name)
-		ds := make(decl_slice, len(c.current.decls))
-		i := 0
-		for _, d := range c.current.decls {
-			ds[i] = d
-			i++
-		}
-		sort.Sort(ds)
-		for _, d := range ds {
-			if len(d.children) > 0 {
-				fmt.Fprintf(buf, status_decls_children,
-					g_decl_class_to_color[d.class],
-					g_decl_class_to_string_status[d.class],
-					d.name, len(d.children))
-			} else {
-				fmt.Fprintf(buf, status_decls,
-					g_decl_class_to_color[d.class],
-					g_decl_class_to_string_status[d.class],
-					d.name)
-			}
-		}
-
-		for _, f := range c.others {
-			fmt.Fprintf(buf, "\n%s:\n", f.name)
-			ds = make(decl_slice, len(f.decls))
-			i = 0
-			for _, d := range f.decls {
-				ds[i] = d
-				i++
-			}
-			sort.Sort(ds)
-			for _, d := range ds {
-				if len(d.children) > 0 {
-					fmt.Fprintf(buf, status_decls_children,
-						g_decl_class_to_color[d.class],
-						g_decl_class_to_string_status[d.class],
-						d.name, len(d.children))
-				} else {
-					fmt.Fprintf(buf, status_decls,
-						g_decl_class_to_color[d.class],
-						g_decl_class_to_string_status[d.class],
-						d.name)
-				}
-			}
-		}
-	}
-	return buf.String()
 }
