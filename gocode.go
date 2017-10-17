@@ -69,6 +69,7 @@ func newDaemon() *daemon {
 	ctxt := build.Default
 	ctxt.GOPATH = os.Getenv("GOPATH")
 	ctxt.GOROOT = runtime.GOROOT()
+	ctxt.IsDir = is_dir
 	d := daemon{
 		context:  package_lookup_context{Context: ctxt},
 		pkgcache: new_package_cache(),

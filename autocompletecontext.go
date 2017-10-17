@@ -550,25 +550,23 @@ func get_other_package_files(filename, packageName string, declcache *decl_cache
 	return ret
 }
 
-func has_go_ext(s string) bool {
-	return len(s) >= len("*.go") && s[len(s)-len(".go"):] == ".go"
-}
-
 func find_other_package_files(filename, package_name string) []string {
 	if filename == "" {
 		return nil
 	}
 
 	dir, file := filepath.Split(filename)
-	files_in_dir, err := readdir_lstat(dir)
+	files_in_dir, err := readdir_gofiles_lstat(dir)
 	if err != nil {
+		// TODO (CEV): panic seems a little aggressive
+		// and will blow out the cache on restart
 		panic(err)
 	}
 
 	const non_regular = os.ModeDir | os.ModeSymlink |
 		os.ModeDevice | os.ModeNamedPipe | os.ModeSocket
 
-	out := make([]string, 0, 16)
+	out := make([]string, 0, len(files_in_dir))
 	for _, stat := range files_in_dir {
 		name := stat.Name()
 		if !has_go_ext(name) || name == file || stat.Mode()&non_regular != 0 {

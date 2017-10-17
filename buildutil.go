@@ -221,7 +221,6 @@ Loop:
 	return "", errSyntax
 }
 
-// TODO: Remove if unused
 func ReadPackageName(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {

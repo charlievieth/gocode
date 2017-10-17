@@ -10,20 +10,91 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/charlievieth/gocode/fs"
+	"github.com/golang/groupcache/lru"
 )
 
-// our own readdir, which skips the files it cannot lstat
-func readdir_lstat(name string) ([]os.FileInfo, error) {
-	f, err := os.Open(name)
+type DirEntry struct {
+	modTime time.Time
+	names   []string
+}
+
+type DirCache struct {
+	cache *lru.Cache
+	mu    sync.RWMutex
+}
+
+func NewDirCache() *DirCache {
+	return &DirCache{
+		cache: lru.New(200),
+	}
+}
+
+func (c *DirCache) readdirnames(path string, fi os.FileInfo) ([]string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	f, err := os.Open(path)
+	if err != nil {
+		c.cache.Remove(path)
+		return nil, err
+	}
+	if fi == nil {
+		fi, err = f.Stat()
+		if err != nil {
+			c.cache.Remove(path)
+			return nil, err
+		}
+	}
+	names, err := f.Readdirnames(-1)
+	f.Close()
+	if err != nil {
+		c.cache.Remove(path)
+		return nil, err
+	}
+	c.cache.Add(path, DirEntry{
+		modTime: fi.ModTime(),
+		names:   names,
+	})
+	return names, nil
+}
+
+func (c *DirCache) Readdirnames(path string) ([]string, error) {
+	c.mu.RLock()
+	v, ok := c.cache.Get(path)
+	c.mu.RUnlock()
+	if !ok {
+		return c.readdirnames(path, nil)
+	}
+	d, ok := v.(DirEntry)
+	if !ok {
+		return c.readdirnames(path, nil) // WTF
+	}
+	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, err
 	}
+	if fi.ModTime().After(d.modTime) {
+		return c.readdirnames(path, fi)
+	}
+	return d.names, nil
+}
 
-	names, err := f.Readdirnames(-1)
-	f.Close()
+var dir_cache = NewDirCache()
+
+func has_go_ext(s string) bool {
+	return len(s) >= len("*.go") && s[len(s)-len(".go"):] == ".go"
+}
+
+func readdirnames(name string) ([]string, error) {
+	return dir_cache.Readdirnames(name)
+}
+
+// our own readdir, which skips the files it cannot lstat
+func readdir_lstat(name string) ([]os.FileInfo, error) {
+	names, err := readdirnames(name)
 	if err != nil {
 		return nil, err
 	}
@@ -33,6 +104,29 @@ func readdir_lstat(name string) ([]os.FileInfo, error) {
 		s, err := fs.Lstat(name + string(filepath.Separator) + lname)
 		if err == nil {
 			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+func readdir_gofiles_lstat(name string) ([]os.FileInfo, error) {
+	names, err := readdirnames(name)
+	if err != nil {
+		return nil, err
+	}
+
+	n := len(names)
+	if n > 64 {
+		n = 64
+	}
+
+	out := make([]os.FileInfo, 0, n)
+	for _, lname := range names {
+		if has_go_ext(lname) {
+			s, err := fs.Lstat(name + string(filepath.Separator) + lname)
+			if err == nil {
+				out = append(out, s)
+			}
 		}
 	}
 	return out, nil
