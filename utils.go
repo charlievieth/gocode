@@ -24,7 +24,7 @@ type DirEntry struct {
 
 type DirCache struct {
 	cache *lru.Cache
-	mu    sync.RWMutex
+	mu    sync.Mutex
 }
 
 func NewDirCache() *DirCache {
@@ -34,8 +34,6 @@ func NewDirCache() *DirCache {
 }
 
 func (c *DirCache) readdirnames(path string, fi os.FileInfo) ([]string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	f, err := os.Open(path)
 	if err != nil {
 		c.cache.Remove(path)
@@ -62,18 +60,25 @@ func (c *DirCache) readdirnames(path string, fi os.FileInfo) ([]string, error) {
 }
 
 func (c *DirCache) Readdirnames(path string) ([]string, error) {
-	c.mu.RLock()
-	v, ok := c.cache.Get(path)
-	c.mu.RUnlock()
-	if !ok {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	v, found := c.cache.Get(path)
+	if !found {
 		return c.readdirnames(path, nil)
 	}
 	d, ok := v.(DirEntry)
 	if !ok {
+		// This should not happen
+		if found {
+			c.cache.Remove(path)
+		}
 		return c.readdirnames(path, nil) // WTF
 	}
-	fi, err := os.Stat(path)
+	fi, err := fs.Stat(path)
 	if err != nil {
+		if found {
+			c.cache.Remove(path)
+		}
 		return nil, err
 	}
 	if fi.ModTime().After(d.modTime) {
