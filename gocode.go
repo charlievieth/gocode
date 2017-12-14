@@ -95,6 +95,11 @@ func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) (r
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.update(conf)
+	d.context.CurrentPackagePath = ""
+	pkg, err := d.context.ImportDir(filepath.Dir(name), build.FindOnly)
+	if err == nil {
+		d.context.CurrentPackagePath = pkg.ImportPath
+	}
 	list, _ := d.autocomplete.apropos(file, name, cursor)
 	if list == nil || len(list) == 0 {
 		return NoCandidates
