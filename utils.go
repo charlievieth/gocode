@@ -36,20 +36,17 @@ func NewDirCache() *DirCache {
 func (c *DirCache) readdirnames(path string, fi os.FileInfo) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		c.cache.Remove(path)
 		return nil, err
 	}
 	if fi == nil {
 		fi, err = f.Stat()
 		if err != nil {
-			c.cache.Remove(path)
 			return nil, err
 		}
 	}
 	names, err := f.Readdirnames(-1)
 	f.Close()
 	if err != nil {
-		c.cache.Remove(path)
 		return nil, err
 	}
 	c.cache.Add(path, DirEntry{
@@ -72,7 +69,7 @@ func (c *DirCache) Readdirnames(path string) ([]string, error) {
 		if found {
 			c.cache.Remove(path)
 		}
-		return c.readdirnames(path, nil) // WTF
+		return c.readdirnames(path, nil)
 	}
 	fi, err := fs.Stat(path)
 	if err != nil {
@@ -82,7 +79,11 @@ func (c *DirCache) Readdirnames(path string) ([]string, error) {
 		return nil, err
 	}
 	if fi.ModTime().After(d.modTime) {
-		return c.readdirnames(path, fi)
+		names, err := c.readdirnames(path, fi)
+		if err != nil {
+			c.cache.Remove(path)
+		}
+		return names, err
 	}
 	return d.names, nil
 }

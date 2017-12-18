@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/charlievieth/buildutil"
 )
 
 const g_debug = false
@@ -96,9 +98,9 @@ func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) (r
 	defer d.mu.Unlock()
 	d.update(conf)
 	d.context.CurrentPackagePath = ""
-	pkg, err := d.context.ImportDir(filepath.Dir(name), build.FindOnly)
+	importPath, err := buildutil.ImportPath(&d.context.Context, filepath.Dir(name))
 	if err == nil {
-		d.context.CurrentPackagePath = pkg.ImportPath
+		d.context.CurrentPackagePath = importPath
 	}
 	list, _ := d.autocomplete.apropos(file, name, cursor)
 	if list == nil || len(list) == 0 {
