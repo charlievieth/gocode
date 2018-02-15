@@ -3,7 +3,6 @@ package gocode
 import (
 	"bytes"
 	"fmt"
-	"go/build"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -11,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/charlievieth/gocode/fs"
 	"github.com/golang/groupcache/lru"
@@ -173,80 +171,14 @@ func is_dir(path string) bool {
 	return err == nil && fi.IsDir()
 }
 
-func char_to_byte_offset(s []byte, offset_c int) (offset_b int) {
-	for offset_b = 0; offset_c > 0 && offset_b < len(s); offset_b++ {
-		if utf8.RuneStart(s[offset_b]) {
-			offset_c--
-		}
-	}
-	return offset_b
-}
-
-func xdg_home_dir() string {
-	xdghome := os.Getenv("XDG_CONFIG_HOME")
-	if xdghome == "" {
-		xdghome = filepath.Join(os.Getenv("HOME"), ".config")
-	}
-	return xdghome
-}
-
 func has_prefix(s, prefix string, ignorecase bool) bool {
+	if strings.HasPrefix(s, prefix) {
+		return true
+	}
 	if ignorecase {
-		s = strings.ToLower(s)
-		prefix = strings.ToLower(prefix)
+		strings.HasPrefix(strings.ToLower(s), strings.ToLower(prefix))
 	}
-	return strings.HasPrefix(s, prefix)
-}
-
-func find_bzl_project_root(libpath, path string) (string, error) {
-	if libpath == "" {
-		return "", fmt.Errorf("could not find project root, libpath is empty")
-	}
-
-	pathMap := map[string]struct{}{}
-	for _, lp := range strings.Split(libpath, ":") {
-		lp := strings.TrimSpace(lp)
-		pathMap[filepath.Clean(lp)] = struct{}{}
-	}
-
-	path = filepath.Dir(path)
-	if path == "" {
-		return "", fmt.Errorf("project root is blank")
-	}
-
-	start := path
-	for path != "/" {
-		if _, ok := pathMap[filepath.Clean(path)]; ok {
-			return path, nil
-		}
-		path = filepath.Dir(path)
-	}
-	return "", fmt.Errorf("could not find project root in %q or its parents", start)
-}
-
-// Code taken directly from `gb`, I hope author doesn't mind.
-func find_gb_project_root(path string) (string, error) {
-	path = filepath.Dir(path)
-	if path == "" {
-		return "", fmt.Errorf("project root is blank")
-	}
-	start := path
-	for path != "/" {
-		root := filepath.Join(path, "src")
-		if _, err := fs.Stat(root); err != nil {
-			if os.IsNotExist(err) {
-				path = filepath.Dir(path)
-				continue
-			}
-			return "", err
-		}
-		path, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			return "", err
-		}
-		return path, nil
-	}
-	return "", fmt.Errorf("could not find project root in %q or its parents", start)
+	return false
 }
 
 // vendorlessImportPath returns the devendorized version of the provided import path.
@@ -322,52 +254,3 @@ func (r *file_reader_type) read_file(filename string) ([]byte, error) {
 }
 
 var file_reader = new_file_reader()
-
-//-------------------------------------------------------------------------
-// copy of the build.Context without func fields
-//-------------------------------------------------------------------------
-
-type go_build_context struct {
-	GOARCH        string
-	GOOS          string
-	GOROOT        string
-	GOPATH        string
-	CgoEnabled    bool
-	UseAllFiles   bool
-	Compiler      string
-	BuildTags     []string
-	ReleaseTags   []string
-	InstallSuffix string
-}
-
-func pack_build_context(ctx *build.Context) go_build_context {
-	return go_build_context{
-		GOARCH:        ctx.GOARCH,
-		GOOS:          ctx.GOOS,
-		GOROOT:        ctx.GOROOT,
-		GOPATH:        ctx.GOPATH,
-		CgoEnabled:    ctx.CgoEnabled,
-		UseAllFiles:   ctx.UseAllFiles,
-		Compiler:      ctx.Compiler,
-		BuildTags:     ctx.BuildTags,
-		ReleaseTags:   ctx.ReleaseTags,
-		InstallSuffix: ctx.InstallSuffix,
-	}
-}
-
-func unpack_build_context(ctx *go_build_context) package_lookup_context {
-	return package_lookup_context{
-		Context: build.Context{
-			GOARCH:        ctx.GOARCH,
-			GOOS:          ctx.GOOS,
-			GOROOT:        ctx.GOROOT,
-			GOPATH:        ctx.GOPATH,
-			CgoEnabled:    ctx.CgoEnabled,
-			UseAllFiles:   ctx.UseAllFiles,
-			Compiler:      ctx.Compiler,
-			BuildTags:     ctx.BuildTags,
-			ReleaseTags:   ctx.ReleaseTags,
-			InstallSuffix: ctx.InstallSuffix,
-		},
-	}
-}
