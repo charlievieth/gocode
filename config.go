@@ -74,7 +74,9 @@ func (c *config) ForceDebugOutput() (s string) {
 }
 
 var g_config = config{
-	proposeBuiltins:  false,
+	proposeBuiltins: false,
+	// this seems like a nice to have that
+	// really existed for bzr projects
 	libPath:          "",
 	autobuild:        false,
 	forceDebugOutput: "",

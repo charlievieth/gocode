@@ -50,11 +50,44 @@ type Config struct {
 	Builtins      bool // propose builtin functions
 }
 
+type cacheKey struct {
+	GOROOT        string
+	GOPATH        string
+	InstallSuffix string
+}
+
+var daemonCache struct {
+	dc map[cacheKey]*daemon
+	mu sync.Mutex
+}
+
+var initDaemonCacheOnce sync.Once
+
 func (c *Config) Complete(file []byte, name string, cursor int) []Candidate {
-	if gocodeDaemon == nil {
-		gocodeDaemon = newDaemon()
+	initDaemonCacheOnce.Do(func() {
+		daemonCache.dc = make(map[cacheKey]*daemon)
+	})
+	// if c.GOPATH == "" {
+	// 	c.GOPATH = os.Getenv("GOPATH")
+	// }
+	key := cacheKey{
+		GOROOT:        c.GOROOT,
+		GOPATH:        c.GOPATH,
+		InstallSuffix: c.InstallSuffix,
 	}
-	return gocodeDaemon.complete(file, name, cursor, c)
+	daemonCache.mu.Lock()
+	d, ok := daemonCache.dc[key]
+	if !ok {
+		d = newDaemon()
+		daemonCache.dc[key] = d
+	}
+	daemonCache.mu.Unlock()
+	return d.complete(file, name, cursor, c)
+
+	// if gocodeDaemon == nil {
+	// 	gocodeDaemon = newDaemon()
+	// }
+	// return gocodeDaemon.complete(file, name, cursor, c)
 }
 
 var gocodeDaemon = newDaemon()
@@ -117,16 +150,18 @@ func (d *daemon) complete(file []byte, name string, cursor int, conf *Config) (r
 	return res
 }
 
+// WARN (CEV): This complicates the use of daemonCache
+//
 func (d *daemon) update(conf *Config) {
 	g_config.SetProposeBuiltins(conf.Builtins)
 	g_config.SetAutoBuild(conf.AutoBuild)
 	if !d.same(conf) {
-		d.context.GOPATH = conf.GOPATH
-		d.context.GOROOT = conf.GOROOT
-		d.context.InstallSuffix = conf.InstallSuffix
-		d.pkgcache = new_package_cache()
-		d.declcache = new_decl_cache(&d.context)
-		d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
+		// d.context.GOPATH = conf.GOPATH
+		// d.context.GOROOT = conf.GOROOT
+		// d.context.InstallSuffix = conf.InstallSuffix
+		// d.pkgcache = new_package_cache()
+		// d.declcache = new_decl_cache(&d.context)
+		// d.autocomplete = new_auto_complete_context(d.pkgcache, d.declcache)
 
 		g_config.libPath = d.libPath() // global config
 		g_config.proposeBuiltins = conf.Builtins
