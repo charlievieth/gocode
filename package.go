@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-type package_parser interface {
-	parse_export(callback func(pkg string, decl ast.Decl))
-}
-
 //-------------------------------------------------------------------------
 // package_file_cache
 //
@@ -20,6 +16,7 @@ type package_parser interface {
 
 type package_file_cache struct {
 	name        string // file name
+	prefix      string //
 	import_name string
 	mtime       int64
 	defalias    string
@@ -32,6 +29,7 @@ type package_file_cache struct {
 func new_package_file_cache(absname, name string) *package_file_cache {
 	m := new(package_file_cache)
 	m.name = absname
+	m.prefix = "!" + m.name + "!"
 	m.import_name = name
 	m.mtime = 0
 	m.defalias = ""
@@ -45,6 +43,20 @@ func new_package_file_cache_forever(name, defalias string) *package_file_cache {
 	m.mtime = -1
 	m.defalias = defalias
 	return m
+}
+
+func (m *package_file_cache) parse_export_fn(pkg string, decl ast.Decl) {
+	anonymify_ast(decl, decl_foreign, m.scope)
+	if pkg == "" || strings.HasPrefix(pkg, m.prefix) {
+		// main package
+		add_ast_decl_to_package(m.main, decl, m.scope)
+	} else {
+		// others
+		if _, ok := m.others[pkg]; !ok {
+			m.others[pkg] = new_decl(pkg, decl_package, nil)
+		}
+		add_ast_decl_to_package(m.others[pkg], decl, m.scope)
+	}
 }
 
 func (m *package_file_cache) process_package_data(data []byte) {
@@ -62,13 +74,12 @@ func (m *package_file_cache) process_package_data(data []byte) {
 	// create map for other packages
 	m.others = make(map[string]*decl)
 
-	var pp package_parser
 	if data[0] == 'B' {
 		// binary format, skip 'B\n'
 		data = data[2:]
 		var p gc_bin_parser
 		p.init(data, m)
-		pp = &p
+		p.parse_export(m.parse_export_fn)
 	} else {
 		// textual format, find the beginning of the package clause
 		i = bytes.Index(data, []byte{'p', 'a', 'c', 'k', 'a', 'g', 'e'})
@@ -79,23 +90,8 @@ func (m *package_file_cache) process_package_data(data []byte) {
 
 		var p gc_parser
 		p.init(data, m)
-		pp = &p
+		p.parse_export(m.parse_export_fn)
 	}
-
-	prefix := "!" + m.name + "!"
-	pp.parse_export(func(pkg string, decl ast.Decl) {
-		anonymify_ast(decl, decl_foreign, m.scope)
-		if pkg == "" || strings.HasPrefix(pkg, prefix) {
-			// main package
-			add_ast_decl_to_package(m.main, decl, m.scope)
-		} else {
-			// others
-			if _, ok := m.others[pkg]; !ok {
-				m.others[pkg] = new_decl(pkg, decl_package, nil)
-			}
-			add_ast_decl_to_package(m.others[pkg], decl, m.scope)
-		}
-	})
 
 	// hack, add ourselves to the package scope
 	mainName := "!" + m.name + "!" + m.defalias

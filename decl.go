@@ -345,17 +345,14 @@ func method_of(d ast.Decl) string {
 		if t.Recv != nil && len(t.Recv.List) != 0 {
 			switch t := t.Recv.List[0].Type.(type) {
 			case *ast.StarExpr:
-				if se, ok := t.X.(*ast.SelectorExpr); ok {
-					return se.Sel.Name
+				switch x := t.X.(type) {
+				case *ast.SelectorExpr:
+					return x.Sel.Name
+				case *ast.Ident:
+					return x.Name
 				}
-				if ident, ok := t.X.(*ast.Ident); ok {
-					return ident.Name
-				}
-				return ""
 			case *ast.Ident:
 				return t.Name
-			default:
-				return ""
 			}
 		}
 	}
@@ -1309,20 +1306,35 @@ func ast_decl_values(d ast.Decl) []ast.Expr {
 	return nil
 }
 
+// GenDecl struct {
+// 	Doc    *CommentGroup // associated documentation; or nil
+// 	TokPos token.Pos     // position of Tok
+// 	Tok    token.Token   // IMPORT, CONST, TYPE, VAR
+// 	Lparen token.Pos     // position of '(', if any
+// 	Specs  []Spec
+// 	Rparen token.Pos // position of ')', if any
+// }
+
 func ast_decl_split(d ast.Decl) []ast.Decl {
 	var decls []ast.Decl
 	if t, ok := d.(*ast.GenDecl); ok {
 		decls = make([]ast.Decl, len(t.Specs))
+		// x := *t
 		for i, s := range t.Specs {
-			decl := new(ast.GenDecl)
-			*decl = *t
-			decl.Specs = make([]ast.Spec, 1)
-			decl.Specs[0] = s
-			decls[i] = decl
+			// decl := x
+			// decl.Specs = []ast.Spec{s}
+			// decls[i] = &decl
+			decls[i] = &ast.GenDecl{
+				Doc:    t.Doc,
+				TokPos: t.TokPos,
+				Tok:    t.Tok,
+				Lparen: t.Lparen,
+				Specs:  []ast.Spec{s},
+				Rparen: t.Rparen,
+			}
 		}
 	} else {
-		decls = make([]ast.Decl, 1)
-		decls[0] = d
+		decls = []ast.Decl{d}
 	}
 	return decls
 }

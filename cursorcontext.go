@@ -102,11 +102,20 @@ func (ti *token_iterator) skip_to_left(left, right token.Token) bool {
 	return true
 }
 
+var bracket_pairs_array = [...]token.Token{
+	token.RPAREN - token.RPAREN: token.LPAREN,
+	token.RBRACK - token.RPAREN: token.LBRACK,
+	token.RBRACE - token.RPAREN: token.LBRACE,
+}
+
 // when the cursor is at the ')' or ']' or '}', move the cursor to an opposite
 // bracket pair, this functions takes nested bracket pairs into account
 func (this *token_iterator) skip_to_balanced_pair() bool {
 	right := this.token().tok
-	left := bracket_pairs_map[right]
+	// WARN
+	// left := bracket_pairs_map[right]
+	// left := bracket_pairs_array[right-token.RPAREN]
+	left := right - (token.RPAREN - token.LPAREN)
 	return this.skip_to_left(left, right)
 }
 

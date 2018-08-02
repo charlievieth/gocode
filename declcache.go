@@ -118,37 +118,50 @@ func (f *decl_file_cache) process_data(data []byte) {
 	}
 }
 
-func append_to_top_decls(decls map[string]*decl, decl ast.Decl, scope *scope) {
-	foreach_decl(decl, func(data *foreach_decl_struct) {
-		class := ast_decl_class(data.decl)
-		for i, name := range data.names {
-			typ, v, vi := data.type_value_index(i)
+type append_decls_holder struct {
+	decls map[string]*decl
+	decl  ast.Decl
+	scope *scope
+}
 
-			d := new_decl_full(name.Name, class, ast_decl_flags(data.decl), typ, v, vi, scope)
-			if d == nil {
-				return
-			}
+func (x *append_decls_holder) append_to_top_decls(data *foreach_decl_struct) {
+	class := ast_decl_class(data.decl)
+	for i, name := range data.names {
+		typ, v, vi := data.type_value_index(i)
 
-			methodof := method_of(decl)
-			if methodof != "" {
-				decl, ok := decls[methodof]
-				if ok {
-					decl.add_child(d)
-				} else {
-					decl = new_decl(methodof, decl_methods_stub, scope)
-					decls[methodof] = decl
-					decl.add_child(d)
-				}
+		d := new_decl_full(name.Name, class, ast_decl_flags(data.decl), typ, v, vi, x.scope)
+		if d == nil {
+			return
+		}
+
+		methodof := method_of(x.decl)
+		if methodof != "" {
+			decl, ok := x.decls[methodof]
+			if ok {
+				decl.add_child(d)
 			} else {
-				decl, ok := decls[d.name]
-				if ok {
-					decl.expand_or_replace(d)
-				} else {
-					decls[d.name] = d
-				}
+				decl = new_decl(methodof, decl_methods_stub, x.scope)
+				x.decls[methodof] = decl
+				decl.add_child(d)
+			}
+		} else {
+			decl, ok := x.decls[d.name]
+			if ok {
+				decl.expand_or_replace(d)
+			} else {
+				x.decls[d.name] = d
 			}
 		}
-	})
+	}
+}
+
+func append_to_top_decls(decls map[string]*decl, decl ast.Decl, scope *scope) {
+	x := append_decls_holder{
+		decls: decls,
+		decl:  decl,
+		scope: scope,
+	}
+	foreach_decl(decl, x.append_to_top_decls)
 }
 
 func abs_path_for_package(filename, p string, context *package_lookup_context) (string, bool) {
