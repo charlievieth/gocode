@@ -1,16 +1,21 @@
 package suggest
 
 import (
-	"bytes"
+	"errors"
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/scanner"
 	"go/token"
 	"go/types"
 	"io/ioutil"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
+	"github.com/charlievieth/buildutil"
 	"github.com/charlievieth/gocode/lookdot"
 )
 
@@ -77,11 +82,21 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 	return res, len(partial)
 }
 
+func join(data []byte, cursor int) []byte {
+	lhs := data[:cursor]
+	rhs := data[cursor:]
+	b := make([]byte, len(lhs)+len(rhs)+1)
+	n := copy(b, lhs)
+	n += copy(b[n:], ";")
+	copy(b[n:], rhs)
+	return b
+}
+
 func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*token.FileSet, token.Pos, *types.Package) {
 	// If we're in trailing white space at the end of a scope,
 	// sometimes go/types doesn't recognize that variables should
 	// still be in scope there.
-	filesemi := bytes.Join([][]byte{data[:cursor], []byte(";"), data[cursor:]}, nil)
+	filesemi := join(data, cursor)
 
 	fset := token.NewFileSet()
 	fileAST, err := parser.ParseFile(fset, filename, filesemi, parser.AllErrors)
@@ -94,14 +109,11 @@ func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*toke
 	}
 	pos := fset.File(astPos).Pos(cursor)
 
-	files := []*ast.File{fileAST}
-	for _, otherName := range c.findOtherPackageFiles(filename, fileAST.Name.Name) {
-		ast, err := parser.ParseFile(fset, otherName, nil, 0)
-		if err != nil {
-			c.logParseError("Error parsing other file", err)
-		}
-		files = append(files, ast)
+	files, err := c.parseOtherPackageFiles(fset, filename, fileAST.Name.Name)
+	if err != nil && len(files) == 0 {
+		c.logParseError("Error parsing other file", err)
 	}
+	files = append(files, fileAST)
 
 	// Clear any function bodies other than where the cursor
 	// is. They're not relevant to suggestions and only slow down
@@ -165,6 +177,78 @@ func (c *Config) logParseError(intro string, err error) {
 	}
 }
 
+func readfilenames(dirname string) ([]string, error) {
+	f, err := os.Open(dirname)
+	if err != nil {
+		return nil, err
+	}
+	names, err := f.Readdirnames(-1)
+	f.Close()
+	if err != nil && len(names) == 0 {
+		return nil, err
+	}
+	return names, nil
+}
+
+func (c *Config) parseOtherPackageFiles(fset *token.FileSet, filename, pkgName string) ([]*ast.File, error) {
+	if filename == "" {
+		return nil, errors.New("empty filename")
+	}
+
+	dir, file := filepath.Split(filename)
+	names, err := readfilenames(dir)
+	if err != nil {
+		return nil, err
+	}
+	isTestFile := strings.HasSuffix(file, "_test.go")
+
+	gate := make(chan struct{}, runtime.NumCPU())
+	ctxt := build.Default
+	var (
+		out   []*ast.File
+		wg    sync.WaitGroup
+		mu    sync.Mutex
+		first error
+	)
+	for _, name := range names {
+		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+			continue
+		}
+		if name == file || !strings.HasSuffix(name, ".go") {
+			continue
+		}
+		if !isTestFile && strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+
+		wg.Add(1)
+		go func(path string) {
+			defer func() { wg.Done(); <-gate }()
+			gate <- struct{}{}
+			pkg, ok := buildutil.ShortImport(&ctxt, path)
+			if !ok || pkg != pkgName {
+				return
+			}
+			af, err := parser.ParseFile(fset, path, nil, 0)
+			if err != nil && af == nil {
+				mu.Lock()
+				if first == nil {
+					first = err
+				}
+				mu.Unlock()
+				return
+			}
+			mu.Lock()
+			out = append(out, af)
+			mu.Unlock()
+		}(filepath.Join(dir, name))
+	}
+	wg.Wait()
+
+	return out, first
+}
+
+// TODO (CEV): remove
 func (c *Config) findOtherPackageFiles(filename, pkgName string) []string {
 	if filename == "" {
 		return nil
@@ -191,7 +275,6 @@ func (c *Config) findOtherPackageFiles(filename, pkgName string) []string {
 		if !isTestFile && strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-
 		abspath := filepath.Join(dir, name)
 		if pkgNameFor(abspath) == pkgName {
 			out = append(out, abspath)
