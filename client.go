@@ -9,13 +9,12 @@ import (
 	"net/rpc"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"time"
 
-	"runtime/debug"
-
-	"github.com/mdempsky/gocode/internal/gbimporter"
-	"github.com/mdempsky/gocode/internal/suggest"
+	"github.com/charlievieth/gocode/gbimporter"
+	"github.com/charlievieth/gocode/suggest"
 )
 
 func doClient() {

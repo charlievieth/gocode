@@ -10,7 +10,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/mdempsky/gocode/internal/lookdot"
+	"github.com/charlievieth/gocode/lookdot"
 )
 
 const src = `
