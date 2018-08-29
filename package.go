@@ -62,6 +62,9 @@ func (m *package_file_cache) process_package_data(data []byte) {
 	// create map for other packages
 	m.others = make(map[string]*decl)
 
+	// TODO: add check for indexed pkg here
+	// use m.import_name for pkg name
+
 	var pp package_parser
 	if data[0] == 'B' {
 		// binary format, skip 'B\n'
