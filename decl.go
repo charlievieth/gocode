@@ -1044,11 +1044,19 @@ func (d *decl) find_child_and_in_embedded(name string) *decl {
 		return nil
 	}
 
-	if d.is_visited_find_child_and_in_embedded() {
-		return nil
+	if d.is_alias() {
+		dd := d.type_dealias()
+		if dd != nil {
+			return dd.find_child_and_in_embedded(name)
+		}
 	}
-	d.set_visited_find_child_and_in_embedded()
-	defer d.clear_visited_find_child_and_in_embedded()
+
+	// WARN (CEV): back out 'fix-test-55-failure'
+	// if d.is_visited_find_child_and_in_embedded() {
+	// 	return nil
+	// }
+	// d.set_visited_find_child_and_in_embedded()
+	// defer d.clear_visited_find_child_and_in_embedded()
 
 	c := d.find_child(name)
 	if c == nil {
