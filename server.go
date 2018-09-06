@@ -96,6 +96,7 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 	}
 	cfg := suggest.Config{
 		Importer: gbimporter.New(&req.Context, req.Filename, underlying),
+		Context:  &req.Context,
 		Builtin:  req.Builtin,
 	}
 	if *g_debug {

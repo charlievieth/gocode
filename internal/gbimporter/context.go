@@ -32,3 +32,17 @@ func PackContext(ctx *build.Context) PackedContext {
 		InstallSuffix: ctx.InstallSuffix,
 	}
 }
+
+// Update context ctxt to match PackedContext
+func (p *PackedContext) Update(ctxt *build.Context) {
+	ctxt.GOARCH = p.GOARCH
+	ctxt.GOOS = p.GOOS
+	ctxt.GOROOT = p.GOROOT
+	ctxt.GOPATH = p.GOPATH
+	ctxt.CgoEnabled = p.CgoEnabled
+	ctxt.UseAllFiles = p.UseAllFiles
+	ctxt.Compiler = p.Compiler
+	ctxt.BuildTags = p.BuildTags
+	ctxt.ReleaseTags = p.ReleaseTags
+	ctxt.InstallSuffix = p.InstallSuffix
+}
