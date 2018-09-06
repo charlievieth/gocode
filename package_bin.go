@@ -355,6 +355,9 @@ func (p *gc_bin_parser) typ(parent string) ast.Expr {
 
 		p.callback(parent, tdecl)
 
+		// read underlying type
+		// t0.SetUnderlying(p.typ(parent))
+
 		// interfaces have no methods
 		if _, ok := t0.(*ast.InterfaceType); ok {
 			return t

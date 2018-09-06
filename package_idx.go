@@ -10,6 +10,7 @@ import (
 	"go/types"
 	"io"
 	"sort"
+	"strconv"
 	"sync"
 )
 
@@ -129,6 +130,7 @@ func parse_indexed_package(data []byte, pfc *package_file_cache, path string, ca
 		declData: declData,
 		pkgIndex: make(map[*types.Package]map[string]uint64),
 		typCache: make(map[uint64]types.Type),
+		expCache: make(map[uint64]ast.Expr),
 
 		// TODO (CEV): remove
 		fake: fakeFileSet{
@@ -143,6 +145,9 @@ func parse_indexed_package(data []byte, pfc *package_file_cache, path string, ca
 
 	for i, pt := range predeclaredTypes {
 		p.typCache[uint64(i)] = pt
+	}
+	for i, pt := range predeclared {
+		p.expCache[uint64(i)] = pt
 	}
 
 	// WARN: can probably remove
@@ -226,7 +231,9 @@ type gc_index_parser struct {
 
 	declData []byte
 	pkgIndex map[*types.Package]map[string]uint64
+	// TODO: replace typCache with expCache - expCache is a hack
 	typCache map[uint64]types.Type
+	expCache map[uint64]ast.Expr
 
 	// TODO (CEV): removed
 	fake fakeFileSet
@@ -240,6 +247,11 @@ type gc_index_parser struct {
 	pfc      *package_file_cache
 }
 
+func (p *gc_index_parser) record() {
+
+}
+
+// TODO: results are never used - delete
 func (p *gc_index_parser) doDecl(pkg *types.Package, name string) {
 	// See if we've already imported this declaration.
 	if obj := pkg.Scope().Lookup(name); obj != nil {
@@ -281,9 +293,15 @@ func (p *gc_index_parser) pkgAt(off uint64) *types.Package {
 	return nil
 }
 
-func (p *gc_index_parser) typAt(off uint64, base *types.Named) types.Type {
+func (p *gc_index_parser) typAt(off uint64, base *types.Named) ast.Expr {
 	if t, ok := p.typCache[off]; ok && (base == nil || !isInterface(t)) {
-		return t
+		// WARN: hack
+		e, ok := p.expCache[off]
+		if !ok {
+			gc_errorf("missing corresponding Expr for Type (%s) at %d",
+				t.String(), off)
+		}
+		return e
 	}
 
 	if off < predeclReserved {
@@ -295,8 +313,8 @@ func (p *gc_index_parser) typAt(off uint64, base *types.Named) types.Type {
 	// TODO: see if we can use ast.Expr
 	t := r.doType(base)
 
-	if base == nil || !isInterface(t) {
-		p.typCache[off] = t
+	if base == nil || !isInterfaceExpr(t) {
+		p.expCache[off] = t
 	}
 	return t
 }
@@ -309,68 +327,71 @@ type importReader struct {
 	prevLine   int64
 }
 
+// WARN
 func (r *importReader) obj(name string) {
-	tag := r.byte()
-	pos := r.pos()
+	// tag := r.byte()
+	// pos := r.pos()
 
-	switch tag {
-	case 'A':
-		typ := r.typ()
+	// switch tag {
+	// case 'A':
+	// 	typ := r.typ()
 
-		r.declare(types.NewTypeName(pos, r.currPkg, name, typ))
+	// 	// WARN
+	// 	// r.declare(types.NewTypeName(pos, r.currPkg, name, typ))
 
-	case 'C':
-		typ, val := r.value()
+	// case 'C':
+	// 	typ, val := r.value()
 
-		r.declare(types.NewConst(pos, r.currPkg, name, typ, val))
+	// 	r.declare(types.NewConst(pos, r.currPkg, name, typ, val))
 
-		decl := &ast.GenDecl{
-			Tok: token.CONST,
-			Specs: []ast.Spec{
-				&ast.ValueSpec{
-					Names: []*ast.Ident{ast.NewIdent(name)},
-					// WARN WARN
-					// Type:   typ,
-					Values: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: "0"}},
-				},
-			},
-		}
-		r.p.callback("OMG", decl)
+	// 	decl := &ast.GenDecl{
+	// 		Tok: token.CONST,
+	// 		Specs: []ast.Spec{
+	// 			&ast.ValueSpec{
+	// 				Names: []*ast.Ident{ast.NewIdent(name)},
+	// 				// WARN WARN
+	// 				// Type:   typ,
+	// 				Values: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: "0"}},
+	// 			},
+	// 		},
+	// 	}
+	// 	// WARN: NO
+	// 	r.p.callback(r.currPkg.Name(), decl)
 
-	case 'F':
-		sig := r.signature(nil)
+	// case 'F':
+	// 	sig := r.signature(nil)
 
-		r.declare(types.NewFunc(pos, r.currPkg, name, sig))
+	// 	r.declare(types.NewFunc(pos, r.currPkg, name, sig))
 
-	case 'T':
-		// Types can be recursive. We need to setup a stub
-		// declaration before recursing.
-		obj := types.NewTypeName(pos, r.currPkg, name, nil)
-		named := types.NewNamed(obj, nil, nil)
-		r.declare(obj)
+	// case 'T':
+	// 	// Types can be recursive. We need to setup a stub
+	// 	// declaration before recursing.
+	// 	obj := types.NewTypeName(pos, r.currPkg, name, nil)
+	// 	named := types.NewNamed(obj, nil, nil)
+	// 	r.declare(obj)
 
-		underlying := r.p.typAt(r.uint64(), named).Underlying()
-		named.SetUnderlying(underlying)
+	// 	underlying := r.p.typAt(r.uint64(), named).Underlying()
+	// 	named.SetUnderlying(underlying)
 
-		if !isInterface(underlying) {
-			for n := r.uint64(); n > 0; n-- {
-				mpos := r.pos()
-				mname := r.ident()
-				recv := r.param()
-				msig := r.signature(recv)
+	// 	if !isInterface(underlying) {
+	// 		for n := r.uint64(); n > 0; n-- {
+	// 			mpos := r.pos()
+	// 			mname := r.ident()
+	// 			recv := r.param()
+	// 			msig := r.signature(recv)
 
-				named.AddMethod(types.NewFunc(mpos, r.currPkg, mname, msig))
-			}
-		}
+	// 			named.AddMethod(types.NewFunc(mpos, r.currPkg, mname, msig))
+	// 		}
+	// 	}
 
-	case 'V':
-		typ := r.typ()
+	// case 'V':
+	// 	typ := r.typ()
 
-		r.declare(types.NewVar(pos, r.currPkg, name, typ))
+	// 	r.declare(types.NewVar(pos, r.currPkg, name, typ))
 
-	default:
-		gc_errorf("unexpected tag: %v", tag)
-	}
+	// default:
+	// 	gc_errorf("unexpected tag: %v", tag)
+	// }
 }
 
 // TODO (CEV): remove if possible
@@ -378,31 +399,33 @@ func (r *importReader) declare(obj types.Object) {
 	obj.Pkg().Scope().Insert(obj)
 }
 
+// WARN
+// TODO: ignore value
 func (r *importReader) value() (typ types.Type, val constant.Value) {
-	typ = r.typ()
+	// typ = r.typ()
 
-	switch b := typ.Underlying().(*types.Basic); b.Info() & types.IsConstType {
-	case types.IsBoolean:
-		val = constant.MakeBool(r.bool())
+	// switch b := typ.Underlying().(*types.Basic); b.Info() & types.IsConstType {
+	// case types.IsBoolean:
+	// 	val = constant.MakeBool(r.bool())
 
-	case types.IsString:
-		val = constant.MakeString(r.string())
+	// case types.IsString:
+	// 	val = constant.MakeString(r.string())
 
-	case types.IsInteger:
-		val = r.mpint(b)
+	// case types.IsInteger:
+	// 	val = r.mpint(b)
 
-	case types.IsFloat:
-		val = r.mpfloat(b)
+	// case types.IsFloat:
+	// 	val = r.mpfloat(b)
 
-	case types.IsComplex:
-		re := r.mpfloat(b)
-		im := r.mpfloat(b)
-		val = constant.BinaryOp(re, token.ADD, constant.MakeImag(im))
+	// case types.IsComplex:
+	// 	re := r.mpfloat(b)
+	// 	im := r.mpfloat(b)
+	// 	val = constant.BinaryOp(re, token.ADD, constant.MakeImag(im))
 
-	default:
-		gc_errorf("unexpected type %v", typ) // panics
-		panic("unreachable")
-	}
+	// default:
+	// 	gc_errorf("unexpected type %v", typ) // panics
+	// 	panic("unreachable")
+	// }
 
 	return
 }
@@ -527,10 +550,17 @@ func (r *importReader) pos() token.Pos {
 	return r.p.fake.pos(r.prevFile, int(r.prevLine))
 }
 
-func (r *importReader) typ() types.Type {
+func (r *importReader) typ() ast.Expr {
 	return r.p.typAt(r.uint64(), nil)
 }
 
+// TODO: replace isInterface
+func isInterfaceExpr(t ast.Expr) bool {
+	_, ok := t.(*ast.InterfaceType)
+	return ok
+}
+
+// TODO: replace with isInterfaceExpr
 func isInterface(t types.Type) bool {
 	_, ok := t.(*types.Interface)
 	return ok
@@ -540,7 +570,7 @@ func (r *importReader) pkg() *types.Package { return r.p.pkgAt(r.uint64()) }
 func (r *importReader) string() string      { return r.p.stringAt(r.uint64()) }
 
 // TODO: see if we can use ast.Expr
-func (r *importReader) doType(base *types.Named) types.Type {
+func (r *importReader) doType(base *types.Named) ast.Expr {
 	switch k := r.kind(); k {
 	default:
 		gc_errorf("unexpected kind tag in %q: %v", r.p.ipath, k)
@@ -549,100 +579,147 @@ func (r *importReader) doType(base *types.Named) types.Type {
 	case definedType:
 		pkg, name := r.qualifiedIdent()
 		r.p.doDecl(pkg, name)
-		return pkg.Scope().Lookup(name).(*types.TypeName).Type()
+		tdecl := &ast.GenDecl{
+			Tok: token.TYPE,
+			Specs: []ast.Spec{
+				&ast.TypeSpec{
+					Name: ast.NewIdent(name),
+				},
+			},
+		}
+
+		// record it right away (underlying type can contain refs to t)
+		t := &ast.SelectorExpr{X: ast.NewIdent(pkg.Name()), Sel: ast.NewIdent(name)}
+
+		// WARN WARN WARN
+		// WARN WARN WARN
+		//
+		{
+			typ := pkg.Scope().Lookup(name).(*types.TypeName)
+			typ.Type()
+			// types.NewNamed(obj, underlying, methods)
+		}
+		// return pkg.Scope().Lookup(name).(*types.TypeName).Type()
+		//
+		// WARN WARN WARN
+		// WARN WARN WARN
+
+		return t
 	case pointerType:
-		return types.NewPointer(r.typ())
+		return &ast.StarExpr{X: r.typ()}
 	case sliceType:
-		return types.NewSlice(r.typ())
+		return &ast.ArrayType{Len: nil, Elt: r.typ()}
 	case arrayType:
 		n := r.uint64()
-		return types.NewArray(r.typ(), int64(n))
+		return &ast.ArrayType{
+			Len: &ast.BasicLit{
+				Kind:  token.INT,
+				Value: strconv.FormatUint(n, 10),
+			},
+			Elt: r.typ(),
+		}
 	case chanType:
 		dir := chanDir(int(r.uint64()))
-		return types.NewChan(dir, r.typ())
+		return &ast.ChanType{Dir: dir, Value: r.typ()}
 	case mapType:
-		return types.NewMap(r.typ(), r.typ())
+		return &ast.MapType{Key: r.typ(), Value: r.typ()}
 	case signatureType:
 		r.currPkg = r.pkg()
-		return r.signature(nil)
+		params := r.paramList()
+		results := r.paramList()
+		return &ast.FuncType{Params: params, Results: results}
 
 	case structType:
 		r.currPkg = r.pkg()
 
-		fields := make([]*types.Var, r.uint64())
-		tags := make([]string, len(fields))
+		fields := make([]*ast.Field, r.uint64())
 		for i := range fields {
-			fpos := r.pos()
+			r.pos() // fpos - unused
 			fname := r.ident()
 			ftyp := r.typ()
-			emb := r.bool()
-			tag := r.string()
+			r.bool()   // emb - unused
+			r.string() // tag - unused
 
-			fields[i] = types.NewField(fpos, r.currPkg, fname, ftyp, emb)
-			tags[i] = tag
+			// WARN: make sure the field names are correct
+
+			var names []*ast.Ident
+			if fname != "" {
+				names = []*ast.Ident{ast.NewIdent(fname)}
+			}
+			fields[i] = &ast.Field{Names: names, Type: ftyp}
 		}
-		return types.NewStruct(fields, tags)
+		return &ast.StructType{Fields: &ast.FieldList{List: fields}}
 
 	case interfaceType:
 		r.currPkg = r.pkg()
 
-		embeddeds := make([]types.Type, r.uint64())
-		for i := range embeddeds {
+		embeddeds := make([]*ast.SelectorExpr, 0, r.uint64())
+		for range embeddeds {
 			_ = r.pos()
-			embeddeds[i] = r.typ()
+			// WARN: copying gocode - the stdlib adds every embedded node
+			if named, ok := r.typ().(*ast.SelectorExpr); ok {
+				embeddeds = append(embeddeds, named)
+			}
 		}
 
-		methods := make([]*types.Func, r.uint64())
+		methods := make([]*ast.Field, 0, r.uint64())
 		for i := range methods {
-			mpos := r.pos()
+			r.pos() // mpos - unused
 			mname := r.ident()
 
+			// WARN: delete
+			//
 			// TODO(mdempsky): Matches bimport.go, but I
 			// don't agree with this.
-			var recv *types.Var
-			if base != nil {
-				recv = types.NewVar(token.NoPos, r.currPkg, "", base)
+			// var recv *types.Var
+			// if base != nil {
+			// 	recv = types.NewVar(token.NoPos, r.currPkg, "", base)
+			// }
+
+			params := r.paramList()
+			results := r.paramList()
+			methods[i] = &ast.Field{
+				Names: []*ast.Ident{ast.NewIdent(mname)},
+				Type:  &ast.FuncType{Params: params, Results: results},
 			}
-
-			msig := r.signature(recv)
-			methods[i] = types.NewFunc(mpos, r.currPkg, mname, msig)
 		}
-
-		// WARN WARN WARN WARN
-		// WARN WARN WARN WARN
-		//
-		// typ := types.NewInterfaceType(methods, embeddeds)
-		// r.p.interfaceList = append(r.p.interfaceList, typ)
-		// return typ
-		panic("FIX ME")
-		return nil
+		for _, field := range embeddeds {
+			methods = append(methods, &ast.Field{Type: field})
+		}
+		return &ast.InterfaceType{Methods: &ast.FieldList{List: methods}}
 	}
+	panic("FIX ME")
 }
 
 func (r *importReader) kind() itag {
 	return itag(r.uint64())
 }
 
-func (r *importReader) signature(recv *types.Var) *types.Signature {
+func (r *importReader) signature(recv *ast.FieldList) *ast.FuncDecl {
 	params := r.paramList()
 	results := r.paramList()
-	variadic := params.Len() > 0 && r.bool()
-	return types.NewSignature(recv, params, results, variadic)
-}
-
-func (r *importReader) paramList() *types.Tuple {
-	xs := make([]*types.Var, r.uint64())
-	for i := range xs {
-		xs[i] = r.param()
+	return &ast.FuncDecl{
+		Recv: recv,
+		Type: &ast.FuncType{Params: params, Results: results},
 	}
-	return types.NewTuple(xs...)
 }
 
-func (r *importReader) param() *types.Var {
-	pos := r.pos()
+func (r *importReader) paramList() *ast.FieldList {
+	fields := make([]*ast.Field, r.uint64())
+	for i := range fields {
+		fields[i] = r.param()
+	}
+	return &ast.FieldList{List: fields}
+}
+
+func (r *importReader) param() *ast.Field {
+	r.pos() // pos - unused
 	name := r.ident()
 	typ := r.typ()
-	return types.NewParam(pos, r.currPkg, name, typ)
+	return &ast.Field{
+		Names: []*ast.Ident{ast.NewIdent(name)},
+		Type:  typ,
+	}
 }
 
 func (r *importReader) bool() bool {
@@ -673,15 +750,15 @@ func (r *importReader) byte() byte {
 	return x
 }
 
-func chanDir(d int) types.ChanDir {
+func chanDir(d int) ast.ChanDir {
 	// tag values must match the constants in cmd/compile/internal/gc/go.go
 	switch d {
 	case 1 /* Crecv */ :
-		return types.RecvOnly
+		return ast.RECV
 	case 2 /* Csend */ :
-		return types.SendOnly
+		return ast.SEND
 	case 3 /* Cboth */ :
-		return types.SendRecv
+		return ast.SEND | ast.RECV
 	default:
 		gc_errorf("unexpected channel dir %d", d)
 		return 0
