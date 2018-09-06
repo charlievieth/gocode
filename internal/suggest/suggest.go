@@ -2,15 +2,20 @@ package suggest
 
 import (
 	"bytes"
+	"errors"
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/scanner"
 	"go/token"
 	"go/types"
-	"io/ioutil"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
+	"github.com/charlievieth/buildutil"
 	"github.com/mdempsky/gocode/internal/lookdot"
 )
 
@@ -94,14 +99,11 @@ func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*toke
 	}
 	pos := fset.File(astPos).Pos(cursor)
 
-	files := []*ast.File{fileAST}
-	for _, otherName := range c.findOtherPackageFiles(filename, fileAST.Name.Name) {
-		ast, err := parser.ParseFile(fset, otherName, nil, 0)
-		if err != nil {
-			c.logParseError("Error parsing other file", err)
-		}
-		files = append(files, ast)
+	files, err := c.parseOtherPackageFiles(fset, filename, fileAST.Name.Name)
+	if err != nil && len(files) == 0 {
+		c.logParseError("Error parsing other file", err)
 	}
+	files = append(files, fileAST)
 
 	// Clear any function bodies other than where the cursor
 	// is. They're not relevant to suggestions and only slow down
@@ -165,23 +167,40 @@ func (c *Config) logParseError(intro string, err error) {
 	}
 }
 
-func (c *Config) findOtherPackageFiles(filename, pkgName string) []string {
+func readfilenames(dirname string) ([]string, error) {
+	f, err := os.Open(dirname)
+	if err != nil {
+		return nil, err
+	}
+	names, err := f.Readdirnames(-1)
+	f.Close()
+	if err != nil && len(names) == 0 {
+		return nil, err
+	}
+	return names, nil
+}
+
+func (c *Config) parseOtherPackageFiles(fset *token.FileSet, filename, pkgName string) ([]*ast.File, error) {
 	if filename == "" {
-		return nil
+		return nil, errors.New("empty filename")
 	}
 
 	dir, file := filepath.Split(filename)
-	dents, err := ioutil.ReadDir(dir)
+	names, err := readfilenames(dir)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	isTestFile := strings.HasSuffix(file, "_test.go")
 
-	// TODO(mdempsky): Use go/build.(*Context).MatchFile or
-	// something to properly handle build tags?
-	var out []string
-	for _, dent := range dents {
-		name := dent.Name()
+	gate := make(chan struct{}, runtime.NumCPU())
+	ctxt := build.Default
+	var (
+		out   []*ast.File
+		wg    sync.WaitGroup
+		mu    sync.Mutex
+		first error
+	)
+	for _, name := range names {
 		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
 			continue
 		}
@@ -192,16 +211,30 @@ func (c *Config) findOtherPackageFiles(filename, pkgName string) []string {
 			continue
 		}
 
-		abspath := filepath.Join(dir, name)
-		if pkgNameFor(abspath) == pkgName {
-			out = append(out, abspath)
-		}
+		wg.Add(1)
+		go func(path string) {
+			defer func() { wg.Done(); <-gate }()
+			gate <- struct{}{}
+			// WARN (CEV): may want to replace this for the PR
+			pkg, ok := buildutil.ShortImport(&ctxt, path)
+			if !ok || pkg != pkgName {
+				return
+			}
+			af, err := parser.ParseFile(fset, path, nil, 0)
+			if err != nil && af == nil {
+				mu.Lock()
+				if first == nil {
+					first = err
+				}
+				mu.Unlock()
+				return
+			}
+			mu.Lock()
+			out = append(out, af)
+			mu.Unlock()
+		}(filepath.Join(dir, name))
 	}
+	wg.Wait()
 
-	return out
-}
-
-func pkgNameFor(filename string) string {
-	file, _ := parser.ParseFile(token.NewFileSet(), filename, nil, parser.PackageClauseOnly)
-	return file.Name.Name
+	return out, first
 }
