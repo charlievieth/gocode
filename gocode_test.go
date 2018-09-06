@@ -14,37 +14,12 @@ import (
 	"testing"
 )
 
-func init() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-}
-
 const TestDirectory = "./_testing"
 
 var (
-	tests    []Test
-	conf     *Config
-	testConf *TestConfig
+	tests []Test
+	conf  *Config
 )
-
-type TestConfig struct {
-	c  Config
-	mu sync.RWMutex
-}
-
-func (t *TestConfig) Config() *Config {
-	t.mu.RLock()
-	c := t.c
-	t.mu.RUnlock()
-	return &c
-}
-
-func (t *TestConfig) SetGOPATH(s string) *Config {
-	t.mu.Lock()
-	t.c.GOPATH = s
-	c := t.c
-	t.mu.Unlock()
-	return &c
-}
 
 func init() {
 	var err error
@@ -52,92 +27,43 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	testConf = &TestConfig{c: *conf}
 	tests, err = loadTests()
 	if err != nil {
 		panic(err)
 	}
 }
 
-func TestInit(t *testing.T) {
-	if _, err := newConfig(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := loadTests(); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestGocode(t *testing.T) {
+	t.Parallel()
 	for _, test := range tests {
-		if err := test.Check(conf); err != nil {
-			t.Errorf("%s: %s", test.Name, err)
-		}
-	}
-}
-
-// Parallel stress test.
-func TestParallel_Stress(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Remove '-short' flag to run")
-	}
-	conf := testConf.Config()
-	wg := new(sync.WaitGroup)
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 100; i++ {
-				for _, test := range tests {
-					if err := test.Check(conf); err != nil {
-						t.Error(err)
-					}
-				}
+		test := test // local copy
+		t.Run(test.Name, func(t *testing.T) {
+			t.Parallel()
+			conf, err := newConfig() // local config for speed
+			if err != nil {
+				t.Fatal(err)
 			}
-		}()
-	}
-	wg.Wait()
-}
-
-func TestParallel_1(t *testing.T) {
-	conf := testConf.Config()
-	t.Parallel()
-	for _, test := range tests {
-		if err := test.Check(conf); err != nil {
-			t.Error(err)
-		}
+			if err := test.Check(conf); err != nil {
+				t.Errorf("%s: %s", test.Name, err)
+			}
+		})
 	}
 }
 
-func TestParallel_2(t *testing.T) {
-	conf := testConf.Config()
+func TestParallel(t *testing.T) {
 	t.Parallel()
-	for _, test := range tests {
-		if err := test.Check(conf); err != nil {
-			t.Error(err)
-		}
+	conf, err := newConfig() // share config
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestParallel_3(t *testing.T) {
-	testConf.SetGOPATH("")
-	conf := testConf.Config()
-	t.Parallel()
 	for _, test := range tests {
-		if err := test.Check(conf); err != nil {
-			t.Error(err)
-		}
-	}
-}
-
-func TestParallel_4(t *testing.T) {
-	testConf.SetGOPATH(os.Getenv("GOPATH"))
-	conf := testConf.Config()
-	t.Parallel()
-	for _, test := range tests {
-		if err := test.Check(conf); err != nil {
-			t.Error(err)
-		}
+		test := test // local copy
+		t.Run(test.Name, func(t *testing.T) {
+			t.Parallel()
+			if err := test.Check(conf); err != nil {
+				t.Errorf("%s: %s", test.Name, err)
+			}
+		})
 	}
 }
 
