@@ -3,7 +3,6 @@ package suggest_test
 import (
 	"bytes"
 	"encoding/json"
-	"go/importer"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/charlievieth/gocode/goimporter"
 	"github.com/charlievieth/gocode/suggest"
 )
 
@@ -52,7 +52,7 @@ func testRegress(t *testing.T, testDir string) {
 	data = append(data[:cursor], data[cursor+1:]...)
 
 	cfg := suggest.Config{
-		Importer: importer.Default(),
+		Importer: new(goimporter.Importer),
 	}
 	if testing.Verbose() {
 		cfg.Logf = t.Logf
@@ -129,12 +129,12 @@ func BenchmarkOne(b *testing.B) {
 	loadSuggestBenchmarksOnce.Do(func() {
 		loadBenchmarks(b)
 	})
-	cfg := suggest.Config{
-		Importer: importer.Default(),
-	}
 	test := suggestBenchmarks[0]
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		cfg := suggest.Config{
+			Importer: new(goimporter.Importer),
+		}
 		cfg.Suggest(test.filename, test.data, test.cursor)
 	}
 }
@@ -143,12 +143,12 @@ func BenchmarkTen(b *testing.B) {
 	loadSuggestBenchmarksOnce.Do(func() {
 		loadBenchmarks(b)
 	})
-	cfg := suggest.Config{
-		Importer: importer.Default(),
-	}
 	tests := suggestBenchmarks[0:10]
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		cfg := suggest.Config{
+			Importer: new(goimporter.Importer),
+		}
 		for _, x := range tests {
 			cfg.Suggest(x.filename, x.data, x.cursor)
 		}
@@ -159,12 +159,12 @@ func BenchmarkAll(b *testing.B) {
 	loadSuggestBenchmarksOnce.Do(func() {
 		loadBenchmarks(b)
 	})
-	cfg := suggest.Config{
-		Importer: importer.Default(),
-	}
 	tests := suggestBenchmarks
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		cfg := suggest.Config{
+			// Importer: new(goimporter.Importer),
+		}
 		for _, x := range tests {
 			cfg.Suggest(x.filename, x.data, x.cursor)
 		}
@@ -179,7 +179,7 @@ func BenchmarkParallel(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		cfg := suggest.Config{
-			Importer: importer.Default(),
+			Importer: new(goimporter.Importer),
 		}
 		for pb.Next() {
 			for _, x := range tests {
