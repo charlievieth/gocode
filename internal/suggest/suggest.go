@@ -212,9 +212,9 @@ func (c *Config) parseOtherPackageFiles(fset *token.FileSet, filename, pkgName s
 		}
 
 		wg.Add(1)
+		gate <- struct{}{}
 		go func(path string) {
 			defer func() { wg.Done(); <-gate }()
-			gate <- struct{}{}
 			// WARN (CEV): may want to replace this for the PR
 			pkg, ok := buildutil.ShortImport(&ctxt, path)
 			if !ok || pkg != pkgName {
