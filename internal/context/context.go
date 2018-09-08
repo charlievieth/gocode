@@ -1,11 +1,11 @@
-package gbimporter
+package context
 
 import "go/build"
 
-// PackedContext is a copy of build.Context without the func fields.
+// Packed is a copy of build.Context without the func fields.
 //
 // TODO(mdempsky): Not sure this belongs here.
-type PackedContext struct {
+type Packed struct {
 	GOARCH        string
 	GOOS          string
 	GOROOT        string
@@ -18,8 +18,8 @@ type PackedContext struct {
 	InstallSuffix string
 }
 
-func PackContext(ctx *build.Context) PackedContext {
-	return PackedContext{
+func Pack(ctx *build.Context) Packed {
+	return Packed{
 		GOARCH:        ctx.GOARCH,
 		GOOS:          ctx.GOOS,
 		GOROOT:        ctx.GOROOT,
@@ -34,7 +34,7 @@ func PackContext(ctx *build.Context) PackedContext {
 }
 
 // Update context ctxt to match PackedContext
-func (p *PackedContext) Update(ctxt *build.Context) {
+func (p *Packed) Update(ctxt *build.Context) {
 	ctxt.GOARCH = p.GOARCH
 	ctxt.GOOS = p.GOOS
 	ctxt.GOROOT = p.GOROOT

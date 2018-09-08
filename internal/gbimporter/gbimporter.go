@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/mdempsky/gocode/internal/context"
 )
 
 // We need to mangle go/build.Default to make gcimporter work as
@@ -17,12 +19,12 @@ var buildDefaultLock sync.Mutex
 // support for gb-based projects.
 type importer struct {
 	underlying types.ImporterFrom
-	ctx        *PackedContext
+	ctx        *context.Packed
 	gbroot     string
 	gbpaths    []string
 }
 
-func New(ctx *PackedContext, filename string, underlying types.ImporterFrom) types.ImporterFrom {
+func New(ctx *context.Packed, filename string, underlying types.ImporterFrom) types.ImporterFrom {
 	imp := &importer{
 		ctx:        ctx,
 		underlying: underlying,

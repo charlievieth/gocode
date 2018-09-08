@@ -16,13 +16,13 @@ import (
 	"sync"
 
 	"github.com/mdempsky/gocode/internal/buildutil"
-	"github.com/mdempsky/gocode/internal/gbimporter"
+	"github.com/mdempsky/gocode/internal/context"
 	"github.com/mdempsky/gocode/internal/lookdot"
 )
 
 type Config struct {
 	Importer types.Importer
-	Context  *gbimporter.PackedContext
+	Context  *context.Packed
 	Logf     func(fmt string, args ...interface{})
 	Builtin  bool
 }

@@ -13,6 +13,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/mdempsky/gocode/internal/context"
 	"github.com/mdempsky/gocode/internal/gbimporter"
 	"github.com/mdempsky/gocode/internal/suggest"
 )
@@ -55,7 +56,7 @@ type AutoCompleteRequest struct {
 	Filename string
 	Data     []byte
 	Cursor   int
-	Context  gbimporter.PackedContext
+	Context  context.Packed
 	Source   bool
 	Builtin  bool
 }

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mdempsky/gocode/internal/gbimporter"
+	"github.com/mdempsky/gocode/internal/context"
 )
 
 func TestRegress(t *testing.T) {
@@ -90,7 +90,7 @@ func BenchmarkParseOtherPackageFiles(b *testing.B) {
 	if _, err := os.Stat(filename); err != nil {
 		b.Skipf("cannot stat 'os/file.go': %s", err)
 	}
-	packed := gbimporter.PackContext(&build.Default)
+	packed := context.Pack(&build.Default)
 	conf := Config{Context: &packed}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
