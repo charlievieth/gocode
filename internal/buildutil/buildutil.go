@@ -44,8 +44,6 @@ func ShortImport(ctxt *build.Context, path string) (string, bool) {
 
 var slashslash = []byte("//")
 
-// TODO (CEV): Add support for binary only packages
-//
 // shouldBuild reports whether it is okay to use this file,
 // The rule is that in the file's leading run of // comments
 // and blank lines, which must be followed by a blank line
