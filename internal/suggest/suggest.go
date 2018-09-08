@@ -99,7 +99,7 @@ func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*toke
 	}
 	pos := fset.File(astPos).Pos(cursor)
 
-	files, err := c.parseOtherPackageFiles(fset, filename, fileAST.Name.Name)
+	files, err := parseOtherPackageFiles(fset, filename, fileAST.Name.Name)
 	if err != nil && len(files) == 0 {
 		c.logParseError("Error parsing other file", err)
 	}
@@ -180,7 +180,7 @@ func readfilenames(dirname string) ([]string, error) {
 	return names, nil
 }
 
-func (c *Config) parseOtherPackageFiles(fset *token.FileSet, filename, pkgName string) ([]*ast.File, error) {
+func parseOtherPackageFiles(fset *token.FileSet, filename, pkgName string) ([]*ast.File, error) {
 	if filename == "" {
 		return nil, errors.New("empty filename")
 	}
