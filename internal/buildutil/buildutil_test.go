@@ -344,9 +344,13 @@ func BenchmarkImportPath_Base(b *testing.B) {
 }
 
 func shortImportFiles(b *testing.B) []string {
-	list, err := filepath.Glob("testdata/os/*.go")
+	const dirname = "testdata/os/*.go"
+	list, err := filepath.Glob(dirname)
 	if err != nil {
 		b.Fatal(err)
+	}
+	if len(list) == 0 {
+		b.Fatal("no go files in testdata directory:", dirname)
 	}
 	return list
 }
