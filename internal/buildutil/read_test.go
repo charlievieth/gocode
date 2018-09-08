@@ -261,6 +261,6 @@ func BenchmarkShortImport_Long(b *testing.B) {
 		return rc, nil
 	}
 	for i := 0; i < b.N; i++ {
-		ShortImport(&ctxt, filename)
+		ShouldBuild(&ctxt, filename)
 	}
 }

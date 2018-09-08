@@ -15,8 +15,9 @@ import (
 	"unicode"
 )
 
-// TODO (CEV): rename
-func ShortImport(ctxt *build.Context, path string) (string, bool) {
+// ShouldBuild reports whether it is okay to use this file with build.Context
+// ctxt and returns the package name.
+func ShouldBuild(ctxt *build.Context, path string) (string, bool) {
 	if !goodOSArchFile(ctxt, filepath.Base(path), nil) {
 		return "", false
 	}

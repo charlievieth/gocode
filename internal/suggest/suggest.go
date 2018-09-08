@@ -216,7 +216,7 @@ func parseOtherPackageFiles(fset *token.FileSet, filename, pkgName string) ([]*a
 		go func(path string) {
 			defer func() { wg.Done(); <-gate }()
 			// WARN (CEV): may want to replace this for the PR
-			pkg, ok := buildutil.ShortImport(&ctxt, path)
+			pkg, ok := buildutil.ShouldBuild(&ctxt, path)
 			if !ok || pkg != pkgName {
 				return
 			}

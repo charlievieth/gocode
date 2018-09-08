@@ -171,7 +171,7 @@ func TestShortImport(t *testing.T) {
 			return ioutil.NopCloser(strings.NewReader(x.src)), nil
 		}
 
-		name, ok := ShortImport(ctx, filename)
+		name, ok := ShouldBuild(ctx, filename)
 		if ok != x.match {
 			t.Errorf("ShortImport(%s) = %v, want %v", filename, ok, x.match)
 		}
@@ -260,7 +260,7 @@ func TestShortImport_Full(t *testing.T) {
 		return os.Open(path)
 	}
 	{
-		name, ok := ShortImport(ctx, "file1.go")
+		name, ok := ShouldBuild(ctx, "file1.go")
 		if !ok {
 			t.Errorf("ShortImport(file1) = false, want true")
 		}
@@ -269,7 +269,7 @@ func TestShortImport_Full(t *testing.T) {
 		}
 	}
 	{
-		name, ok := ShortImport(ctx, "file2.go")
+		name, ok := ShouldBuild(ctx, "file2.go")
 		if !ok {
 			t.Errorf("ShortImport(file2) = false, want true")
 		}
@@ -280,7 +280,7 @@ func TestShortImport_Full(t *testing.T) {
 	// remove build tags - should exclude file1
 	ctx.BuildTags = nil
 	{
-		name, ok := ShortImport(ctx, "file1.go")
+		name, ok := ShouldBuild(ctx, "file1.go")
 		if ok {
 			t.Errorf("ShortImport(file1) = false, want true")
 		}
@@ -359,7 +359,7 @@ func benchmarkShortImport(b *testing.B, ctxt *build.Context, list []string) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, path := range list {
-			ShortImport(ctxt, path)
+			ShouldBuild(ctxt, path)
 		}
 	}
 }
