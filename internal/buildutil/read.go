@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"sync"
 )
 
 type importReader struct {
@@ -145,14 +146,32 @@ func (r *importReader) readIdent() {
 	}
 }
 
+var readerPool sync.Pool
+
+func getReader(f io.Reader) *bufio.Reader {
+	if v := readerPool.Get(); v != nil {
+		r := v.(*bufio.Reader)
+		r.Reset(f)
+		return r
+	}
+	return bufio.NewReader(f)
+}
+
+func putReader(r *bufio.Reader) {
+	r.Reset(nil) // remove reference
+	readerPool.Put(r)
+}
+
 // readImportsFast is like readImports, except that it stops reading after the
 // package clause.
 func readImportsFast(f io.Reader) ([]byte, error) {
-	r := importReader{b: bufio.NewReader(f)}
+	rr := getReader(f)
+	r := importReader{b: rr}
 
 	r.readKeyword("package")
 	r.readIdent()
 	r.readByte()
+	putReader(rr)
 
 	// If we stopped successfully before EOF, we read a byte that told us we were done.
 	// Return all but that last byte, which would cause a syntax error if we let it through.
