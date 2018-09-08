@@ -81,11 +81,11 @@ func testRegress(t *testing.T, testDir string) {
 func BenchmarkParseOtherPackageFiles(b *testing.B) {
 	goroot := runtime.GOROOT()
 	if goroot == "" {
-		b.Fatal("GOROOT must be set for this benchmark")
+		b.Skip("GOROOT must be set for this benchmark")
 	}
 	filename := filepath.Join(goroot, "src", "os", "file.go")
 	if _, err := os.Stat(filename); err != nil {
-		b.Fatalf("cannot stat the 'os/file.go': %s", err)
+		b.Skipf("cannot stat 'os/file.go': %s", err)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
