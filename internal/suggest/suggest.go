@@ -15,7 +15,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/charlievieth/buildutil"
+	"github.com/mdempsky/gocode/internal/buildutil"
 	"github.com/mdempsky/gocode/internal/lookdot"
 )
 
