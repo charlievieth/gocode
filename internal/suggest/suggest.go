@@ -180,6 +180,11 @@ func readfilenames(dirname string) ([]string, error) {
 	return names, nil
 }
 
+// parseGate controls the number of concurrent file parses.
+// Send before an operation and receive after.
+var parseGate = make(chan struct{}, runtime.NumCPU()*2)
+
+// TODO (CEV): use global parse gate
 func parseOtherPackageFiles(fset *token.FileSet, filename, pkgName string) ([]*ast.File, error) {
 	if filename == "" {
 		return nil, errors.New("empty filename")
@@ -192,7 +197,6 @@ func parseOtherPackageFiles(fset *token.FileSet, filename, pkgName string) ([]*a
 	}
 	isTestFile := strings.HasSuffix(file, "_test.go")
 
-	gate := make(chan struct{}, runtime.NumCPU())
 	ctxt := build.Default
 	var (
 		out   []*ast.File
@@ -212,9 +216,12 @@ func parseOtherPackageFiles(fset *token.FileSet, filename, pkgName string) ([]*a
 		}
 
 		wg.Add(1)
-		gate <- struct{}{}
+		parseGate <- struct{}{}
 		go func(path string) {
-			defer func() { wg.Done(); <-gate }()
+			defer func() {
+				wg.Done()
+				<-parseGate
+			}()
 			pkg, ok := buildutil.ShouldBuild(&ctxt, path)
 			if !ok || pkg != pkgName {
 				return
