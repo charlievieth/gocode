@@ -155,22 +155,18 @@ var packageNameTests = []struct {
 	{
 		src:  "package foo\n",
 		name: "foo",
-		err:  nil,
+	},
+	{
+		src:  "package foo;",
+		name: "foo",
 	},
 	{
 		src:  "// +build !windows\npackage foo\n",
 		name: "foo",
-		err:  nil,
-	},
-	{
-		src:  "// +build !windows\npackagee extra_e\n",
-		name: "",
-		err:  errSyntax,
 	},
 	{
 		src:  "/* foo */ // +build !windows\npackage foo\n",
 		name: "foo",
-		err:  nil,
 	},
 	{
 		src: `// Copyright 2011 The Go Authors.  All rights reserved.
@@ -187,7 +183,17 @@ package buildutil
 import "go/build"
 `,
 		name: "buildutil",
-		err:  nil,
+	},
+	// errors
+	{
+		src:  "// +build !windows\npackagee extra_e\n",
+		name: "",
+		err:  errSyntax,
+	},
+	{
+		src:  "package ;\n",
+		name: "",
+		err:  errSyntax,
 	},
 }
 
