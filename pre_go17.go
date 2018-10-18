@@ -1,6 +1,6 @@
 // +build !go1.7
 
-package main
+package gocode
 
 func init() {
 	knownPackageIdents["context"] = "golang.org/x/net/context"

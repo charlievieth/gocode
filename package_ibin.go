@@ -1,4 +1,4 @@
-package main
+package gocode
 
 //-------------------------------------------------------------------------
 // gc_ibin_parser
@@ -95,7 +95,7 @@ func (p *gc_ibin_parser) typAt(off uint64) *ibinType {
 		panic(fmt.Sprintf("predeclared type missing from cache: %v", off))
 	}
 
-	r := &importReader{p: p}
+	r := &bimportReader{p: p}
 	r.declReader.Reset(p.declData[off-predeclReserved:])
 	t := r.doType()
 	p.typCache[off] = t
@@ -210,7 +210,7 @@ func (p *gc_ibin_parser) doDecl(pkg ibinPackage, name string) *ibinType {
 		panic(fmt.Sprintf("%q not in %q", name, pkg.fullName))
 	}
 
-	r := &importReader{p: p, currPkg: pkg}
+	r := &bimportReader{p: p, currPkg: pkg}
 	r.declReader.Reset(p.declData[off:])
 	t := r.obj(name)
 	pkg.declTyp[name] = t
@@ -229,13 +229,13 @@ func (t *ibinType) underlying() ast.Expr {
 	return t.typ
 }
 
-type importReader struct {
+type bimportReader struct {
 	p          *gc_ibin_parser
 	declReader bytes.Reader
 	currPkg    ibinPackage
 }
 
-func (r *importReader) obj(name string) *ibinType {
+func (r *bimportReader) obj(name string) *ibinType {
 	tag := r.byte()
 	r.pos()
 
@@ -337,7 +337,7 @@ const (
 )
 
 // we don't care about that, let's just skip it
-func (r *importReader) pos() {
+func (r *bimportReader) pos() {
 	if r.int64() != deltaNewFile {
 	} else if l := r.int64(); l == -1 {
 	} else {
@@ -345,7 +345,7 @@ func (r *importReader) pos() {
 	}
 }
 
-func (r *importReader) value() *ibinType {
+func (r *bimportReader) value() *ibinType {
 	t := r.typ()
 	typ := t.underlying()
 	ident, ok := typ.(*ast.Ident)
@@ -402,7 +402,7 @@ func intSize(typ *ast.Ident) (signed bool, maxBytes uint) {
 	panic(fmt.Sprintf("unexpected type: %v", typ))
 }
 
-func (r *importReader) mpint(typ *ast.Ident) constant.Value {
+func (r *bimportReader) mpint(typ *ast.Ident) constant.Value {
 	signed, maxBytes := intSize(typ)
 
 	maxSmall := 256 - maxBytes
@@ -450,7 +450,7 @@ func (r *importReader) mpint(typ *ast.Ident) constant.Value {
 	return x
 }
 
-func (r *importReader) mpfloat(typ *ast.Ident) {
+func (r *bimportReader) mpfloat(typ *ast.Ident) {
 	x := r.mpint(typ)
 	if constant.Sign(x) == 0 {
 		return
@@ -458,7 +458,7 @@ func (r *importReader) mpfloat(typ *ast.Ident) {
 	r.int64()
 }
 
-func (r *importReader) doType() *ibinType {
+func (r *bimportReader) doType() *ibinType {
 	k := r.kind()
 	switch k {
 	default:
@@ -551,7 +551,7 @@ func (r *importReader) doType() *ibinType {
 	}
 }
 
-func (r *importReader) signature() *ast.FuncType {
+func (r *bimportReader) signature() *ast.FuncType {
 	params := r.paramList()
 	results := r.paramList()
 	if params != nil && len(params.List) > 0 {
@@ -563,7 +563,7 @@ func (r *importReader) signature() *ast.FuncType {
 	return &ast.FuncType{Params: params, Results: results}
 }
 
-func (r *importReader) paramList() *ast.FieldList {
+func (r *bimportReader) paramList() *ast.FieldList {
 	xs := make([]*ast.Field, r.uint64())
 	for i := range xs {
 		xs[i] = r.param()
@@ -571,7 +571,7 @@ func (r *importReader) paramList() *ast.FieldList {
 	return &ast.FieldList{List: xs}
 }
 
-func (r *importReader) param() *ast.Field {
+func (r *bimportReader) param() *ast.Field {
 	r.pos()
 	name := r.ident()
 	if name == "" { // gocode specific hack for unnamed parameters
@@ -584,20 +584,20 @@ func (r *importReader) param() *ast.Field {
 	}
 }
 
-func (r *importReader) typ() *ibinType   { return r.p.typAt(r.uint64()) }
-func (r *importReader) kind() itag       { return itag(r.uint64()) }
-func (r *importReader) pkg() ibinPackage { return r.p.pkgAt(r.uint64()) }
-func (r *importReader) string() string   { return r.p.stringAt(r.uint64()) }
-func (r *importReader) bool() bool       { return r.uint64() != 0 }
-func (r *importReader) ident() string    { return r.string() }
+func (r *bimportReader) typ() *ibinType   { return r.p.typAt(r.uint64()) }
+func (r *bimportReader) kind() itag       { return itag(r.uint64()) }
+func (r *bimportReader) pkg() ibinPackage { return r.p.pkgAt(r.uint64()) }
+func (r *bimportReader) string() string   { return r.p.stringAt(r.uint64()) }
+func (r *bimportReader) bool() bool       { return r.uint64() != 0 }
+func (r *bimportReader) ident() string    { return r.string() }
 
-func (r *importReader) qualifiedIdent() (ibinPackage, string) {
+func (r *bimportReader) qualifiedIdent() (ibinPackage, string) {
 	name := r.string()
 	pkg := r.pkg()
 	return pkg, name
 }
 
-func (r *importReader) int64() int64 {
+func (r *bimportReader) int64() int64 {
 	n, err := binary.ReadVarint(&r.declReader)
 	if err != nil {
 		panic(fmt.Sprintf("readVarint: %v", err))
@@ -605,7 +605,7 @@ func (r *importReader) int64() int64 {
 	return n
 }
 
-func (r *importReader) uint64() uint64 {
+func (r *bimportReader) uint64() uint64 {
 	n, err := binary.ReadUvarint(&r.declReader)
 	if err != nil {
 		panic(fmt.Sprintf("readUvarint: %v", err))
@@ -613,7 +613,7 @@ func (r *importReader) uint64() uint64 {
 	return n
 }
 
-func (r *importReader) byte() byte {
+func (r *bimportReader) byte() byte {
 	x, err := r.declReader.ReadByte()
 	if err != nil {
 		panic(fmt.Sprintf("declReader.ReadByte: %v", err))
