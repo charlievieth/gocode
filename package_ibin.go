@@ -95,7 +95,7 @@ func (p *gc_ibin_parser) typAt(off uint64) *ibinType {
 		panic(fmt.Sprintf("predeclared type missing from cache: %v", off))
 	}
 
-	r := &bimportReader{p: p}
+	r := &bimportReader{p: p, version: p.version}
 	r.declReader.Reset(p.declData[off-predeclReserved:])
 	t := r.doType()
 	p.typCache[off] = t
@@ -134,12 +134,14 @@ func (p *gc_ibin_parser) init(data []byte, pfc *package_file_cache) {
 }
 
 func (p *gc_ibin_parser) parse_export(callback func(string, ast.Decl)) {
-	const currentVersion = 0
 	p.callback = callback
 
 	r := &intReader{bytes.NewReader(p.data)}
 	p.version = int(r.uint64())
-	if p.version != currentVersion {
+	switch p.version {
+	case 0, 1:
+		// ok
+	default:
 		panic(fmt.Errorf("unknown export format version %d", p.version))
 	}
 
@@ -210,7 +212,7 @@ func (p *gc_ibin_parser) doDecl(pkg ibinPackage, name string) *ibinType {
 		panic(fmt.Sprintf("%q not in %q", name, pkg.fullName))
 	}
 
-	r := &bimportReader{p: p, currPkg: pkg}
+	r := &bimportReader{p: p, currPkg: pkg, version: p.version}
 	r.declReader.Reset(p.declData[off:])
 	t := r.obj(name)
 	pkg.declTyp[name] = t
@@ -233,6 +235,7 @@ type bimportReader struct {
 	p          *gc_ibin_parser
 	declReader bytes.Reader
 	currPkg    ibinPackage
+	version    int
 }
 
 func (r *bimportReader) obj(name string) *ibinType {
@@ -313,6 +316,7 @@ func (r *bimportReader) obj(name string) *ibinType {
 				},
 			},
 		})
+
 		return typ
 	default:
 		panic(fmt.Sprintf("unexpected tag: %v", tag))
@@ -338,10 +342,20 @@ const (
 
 // we don't care about that, let's just skip it
 func (r *bimportReader) pos() {
-	if r.int64() != deltaNewFile {
-	} else if l := r.int64(); l == -1 {
+	if r.version == 0 {
+		if r.int64() != deltaNewFile {
+		} else if l := r.int64(); l == -1 {
+		} else {
+			r.string()
+		}
 	} else {
-		r.string()
+		delta := r.int64()
+		if delta&1 != 0 {
+			delta = r.int64()
+			if delta&1 != 0 {
+				r.string()
+			}
+		}
 	}
 }
 
@@ -516,8 +530,10 @@ func (r *bimportReader) doType() *ibinType {
 			if fname != "" && !emb {
 				names = []*ast.Ident{ast.NewIdent(fname)}
 			}
+
 			fields[i] = &ast.Field{Names: names, Type: ftyp.typ}
 		}
+
 		return &ibinType{typ: &ast.StructType{Fields: &ast.FieldList{List: fields}}}
 
 	case interfaceType:

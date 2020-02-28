@@ -413,7 +413,8 @@ func (f *auto_complete_file) cursor_in(block *ast.BlockStmt) bool {
 		return false
 	}
 
-	if f.cursor > f.offset(block.Lbrace) && f.cursor <= f.offset(block.Rbrace) {
+	// The logic for block.End() changed in go1.14.
+	if f.cursor > f.offset(block.Lbrace) && f.cursor <= f.offset(block.End()-1) {
 		return true
 	}
 	return false
