@@ -6,6 +6,7 @@ import (
 	"go/build"
 	"go/parser"
 	"go/token"
+	"hash/crc32"
 	"log"
 	"os"
 	"os/exec"
@@ -55,8 +56,10 @@ func collect_package_imports(filename string, decls []ast.Decl, context *package
 //-------------------------------------------------------------------------
 
 type decl_file_cache struct {
-	name  string // file name
-	mtime int64  // last modification time
+	name     string // file name
+	mtime    int64  // last modification time
+	size     int64  // file size
+	checksum uint32 // crc32 checksum of the file
 
 	decls     map[string]*decl // top-level declarations
 	error     error            // last error
@@ -75,7 +78,7 @@ func new_decl_file_cache(name string, context *package_lookup_context) *decl_fil
 }
 
 func (f *decl_file_cache) update() {
-	stat, err := os.Stat(f.name)
+	stat, err := fs.Stat(f.name)
 	if err != nil {
 		f.decls = nil
 		f.error = err
@@ -88,18 +91,21 @@ func (f *decl_file_cache) update() {
 		return
 	}
 
+	data, err := file_reader.read_file(f.name)
+	if err != nil {
+		f.error = err
+	}
+	f.error = nil
 	f.mtime = statmtime
-	f.read_file()
-}
 
-func (f *decl_file_cache) read_file() {
-	var data []byte
-	data, f.error = file_reader.read_file(f.name)
-	if f.error != nil {
+	sum := crc32.Checksum(data, crc32.MakeTable(crc32.Castagnoli))
+	if f.checksum == sum && f.size == stat.Size() {
 		return
 	}
-	data, _ = filter_out_shebang(data)
+	f.size = stat.Size()
+	f.checksum = sum
 
+	data, _ = filter_out_shebang(data)
 	f.process_data(data)
 }
 
