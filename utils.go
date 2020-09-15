@@ -243,7 +243,7 @@ type file_reader_type struct {
 }
 
 func new_file_reader() *file_reader_type {
-	return &file_reader_type{gate: make(chan struct{}, 50)}
+	return &file_reader_type{gate: make(chan struct{}, 100)}
 }
 
 func (r *file_reader_type) read_file(filename string) ([]byte, error) {
