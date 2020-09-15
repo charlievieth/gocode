@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 )
 
 //-------------------------------------------------------------------------
@@ -415,25 +417,27 @@ func (c *auto_complete_context) apropos(file []byte, filename string, cursor int
 
 func update_packages(ps map[string]*package_file_cache) {
 	// initiate package cache update
-	done := make(chan bool)
+	var wg sync.WaitGroup
+	var failed int32
+
 	for _, p := range ps {
+		wg.Add(1)
 		go func(p *package_file_cache) {
 			defer func() {
+				wg.Done()
 				if err := recover(); err != nil {
 					print_backtrace(err)
-					done <- false
+					atomic.StoreInt32(&failed, 1)
 				}
 			}()
 			p.update_cache()
-			done <- true
 		}(p)
 	}
 
 	// wait for its completion
-	for _ = range ps {
-		if !<-done {
-			panic("One of the package cache updaters panicked")
-		}
+	wg.Wait()
+	if atomic.LoadInt32(&failed) != 0 {
+		panic("One of the package cache updaters panicked")
 	}
 }
 
@@ -524,29 +528,35 @@ func fixup_packages(filescope *scope, pkgs []package_import, pcache package_cach
 
 func get_other_package_files(filename, packageName string, declcache *decl_cache) []*decl_file_cache {
 	others := find_other_package_files(filename, packageName)
-
 	ret := make([]*decl_file_cache, len(others))
-	done := make(chan *decl_file_cache)
 
-	for _, nm := range others {
-		go func(name string) {
+	var (
+		wg     sync.WaitGroup
+		mu     sync.Mutex
+		failed int32
+	)
+	for i, nm := range others {
+		wg.Add(1)
+		go func(i int, name string) {
 			defer func() {
+				wg.Done()
 				if err := recover(); err != nil {
 					print_backtrace(err)
-					done <- nil
+					atomic.StoreInt32(&failed, 1)
 				}
 			}()
-			done <- declcache.get_and_update(name)
-		}(nm)
-	}
 
-	for i := range others {
-		ret[i] = <-done
-		if ret[i] == nil {
-			panic("One of the decl cache updaters panicked")
-		}
+			dc := declcache.get_and_update(name)
+			mu.Lock()
+			ret[i] = dc
+			mu.Unlock()
+		}(i, nm)
 	}
+	wg.Wait()
 
+	if atomic.LoadInt32(&failed) != 0 {
+		panic("One of the decl cache updaters panicked")
+	}
 	return ret
 }
 
