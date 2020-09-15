@@ -39,7 +39,7 @@ func new_out_buffers(ctx *auto_complete_context) *out_buffers {
 	b.tmpbuf = bytes.NewBuffer(make([]byte, 0, 1024))
 	b.candidates = make([]candidate, 0, 64)
 	b.ctx = ctx
-	b.canonical_aliases = make(map[string]string)
+	b.canonical_aliases = make(map[string]string, len(b.ctx.current.packages))
 	for _, imp := range b.ctx.current.packages {
 		b.canonical_aliases[imp.abspath] = imp.alias
 	}
@@ -92,7 +92,7 @@ func (b *out_buffers) append_embedded(p string, decl *decl, pkg string, class de
 	first_level := false
 	if b.tmpns == nil {
 		// first level, create tmp namespace
-		b.tmpns = make(map[string]bool)
+		b.tmpns = make(map[string]bool, len(decl.children))
 		first_level = true
 
 		// add all children of the current decl to the namespace
@@ -157,7 +157,7 @@ func new_auto_complete_context(pcache package_cache, declcache *decl_cache) *aut
 func (c *auto_complete_context) update_caches() {
 	// temporary map for packages that we need to check for a cache expiration
 	// map is used as a set of unique items to prevent double checks
-	ps := make(map[string]*package_file_cache)
+	ps := make(map[string]*package_file_cache, len(c.current.packages))
 
 	// collect import information from all of the files
 	c.pcache.append_packages(ps, c.current.packages)
@@ -180,7 +180,13 @@ func (c *auto_complete_context) update_caches() {
 }
 
 func (c *auto_complete_context) merge_decls() {
-	c.pkg = new_scope(g_universe_scope)
+	// rough estimate of the cache size
+	n := len(c.current.decls)
+	for _, f := range c.others {
+		n += len(f.decls)
+	}
+	c.pkg = new_scope_size(g_universe_scope, n)
+
 	merge_decls(c.current.filescope, c.pkg, c.current.decls)
 	merge_decls_from_packages(c.pkg, c.current.packages, c.pcache)
 	for _, f := range c.others {

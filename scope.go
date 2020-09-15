@@ -17,14 +17,22 @@ func new_named_scope(outer *scope, name string) *scope {
 	return s
 }
 
-func new_scope(outer *scope) *scope {
+func new_scope_size(outer *scope, size int) *scope {
 	s := new(scope)
 	if outer != nil {
 		s.pkgname = outer.pkgname
 	}
 	s.parent = outer
-	s.entities = make(map[string]*decl)
+	if size > 0 {
+		s.entities = make(map[string]*decl, size)
+	} else {
+		s.entities = make(map[string]*decl, size)
+	}
 	return s
+}
+
+func new_scope(outer *scope) *scope {
+	return new_scope_size(outer, 0)
 }
 
 // returns: new, prev
