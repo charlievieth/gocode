@@ -22,6 +22,8 @@ type package_file_cache struct {
 	name        string // file name
 	import_name string
 	mtime       int64
+	size        int64  // file size
+	checksum    uint32 // crc32 checksum of the file
 	defalias    string
 
 	scope  *scope
