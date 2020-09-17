@@ -304,17 +304,17 @@ func new_decl_full(name string, class decl_class, flags decl_flags, typ, v ast.E
 	if name == "_" {
 		return nil
 	}
-	d := new(decl)
-	d.name = name
-	d.class = class
-	d.flags = flags
-	d.typ = typ
-	d.value = v
-	d.value_index = vi
-	d.scope = s
-	d.children = ast_type_to_children(d.typ, flags, s)
-	d.embedded = ast_type_to_embedded(d.typ)
-	return d
+	return &decl{
+		name:        name,
+		class:       class,
+		flags:       flags,
+		typ:         typ,
+		value:       v,
+		value_index: vi,
+		scope:       s,
+		children:    ast_type_to_children(typ, flags, s),
+		embedded:    ast_type_to_embedded(typ),
+	}
 }
 
 func new_decl(name string, class decl_class, scope *scope) *decl {
@@ -1318,21 +1318,21 @@ func ast_decl_values(d ast.Decl) []ast.Expr {
 }
 
 func ast_decl_split(d ast.Decl) []ast.Decl {
-	var decls []ast.Decl
 	if t, ok := d.(*ast.GenDecl); ok {
-		decls = make([]ast.Decl, len(t.Specs))
+		decls := make([]ast.Decl, len(t.Specs))
 		for i, s := range t.Specs {
-			decl := new(ast.GenDecl)
-			*decl = *t
-			decl.Specs = make([]ast.Spec, 1)
-			decl.Specs[0] = s
-			decls[i] = decl
+			decls[i] = &ast.GenDecl{
+				Doc:    t.Doc,
+				TokPos: t.TokPos,
+				Tok:    t.Tok,
+				Lparen: t.Lparen,
+				Specs:  []ast.Spec{s},
+				Rparen: t.Rparen,
+			}
 		}
-	} else {
-		decls = make([]ast.Decl, 1)
-		decls[0] = d
+		return decls
 	}
-	return decls
+	return []ast.Decl{d}
 }
 
 //-------------------------------------------------------------------------
