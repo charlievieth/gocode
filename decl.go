@@ -1461,6 +1461,7 @@ func init() {
 	add_const("false")
 	add_const("iota")
 	add_const("nil")
+	add_const("return")
 
 	add_func := func(name, typ string) {
 		d := new_decl(name, decl_func, g_universe_scope)
