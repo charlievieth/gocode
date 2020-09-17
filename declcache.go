@@ -94,6 +94,7 @@ func (f *decl_file_cache) update() {
 	data, err := file_reader.read_file(f.name)
 	if err != nil {
 		f.error = err
+		return
 	}
 	f.error = nil
 	f.mtime = statmtime
