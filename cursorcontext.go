@@ -442,6 +442,7 @@ var knownPackageIdents = map[string]string{
 	"base64":          "encoding/base64",
 	"big":             "math/big",
 	"binary":          "encoding/binary",
+	"bits":            "math/bits",
 	"bufio":           "bufio",
 	"build":           "go/build",
 	"bytes":           "bytes",
@@ -466,6 +467,7 @@ var knownPackageIdents = map[string]string{
 	"dsa":             "crypto/dsa",
 	"dwarf":           "debug/dwarf",
 	"ecdsa":           "crypto/ecdsa",
+	"ed25519":         "crypto/ed25519",
 	"elf":             "debug/elf",
 	"elliptic":        "crypto/elliptic",
 	"encoding":        "encoding",
@@ -487,10 +489,8 @@ var knownPackageIdents = map[string]string{
 	"heap":            "container/heap",
 	"hex":             "encoding/hex",
 	"hmac":            "crypto/hmac",
-	"hpack":           "vendor/golang_org/x/net/http2/hpack",
 	"html":            "html",
 	"http":            "net/http",
-	"httplex":         "vendor/golang_org/x/net/lex/httplex",
 	"httptest":        "net/http/httptest",
 	"httptrace":       "net/http/httptrace",
 	"httputil":        "net/http/httputil",
@@ -507,6 +507,7 @@ var knownPackageIdents = map[string]string{
 	"lzw":             "compress/lzw",
 	"macho":           "debug/macho",
 	"mail":            "net/mail",
+	"maphash":         "hash/maphash",
 	"math":            "math",
 	"md5":             "crypto/md5",
 	"mime":            "mime",
@@ -521,6 +522,7 @@ var knownPackageIdents = map[string]string{
 	"pem":             "encoding/pem",
 	"pkix":            "crypto/x509/pkix",
 	"plan9obj":        "debug/plan9obj",
+	"plugin":          "plugin",
 	"png":             "image/png",
 	"pprof":           "net/http/pprof",
 	"printer":         "go/printer",
@@ -561,7 +563,9 @@ var knownPackageIdents = map[string]string{
 	"token":           "go/token",
 	"trace":           "runtime/trace",
 	"types":           "go/types",
+	"tzdata":          "time/tzdata",
 	"unicode":         "unicode",
+	"unsafe":          "unsafe",
 	"url":             "net/url",
 	"user":            "os/user",
 	"utf16":           "unicode/utf16",
@@ -570,8 +574,11 @@ var knownPackageIdents = map[string]string{
 	"xml":             "encoding/xml",
 	"zip":             "archive/zip",
 	"zlib":            "compress/zlib",
-	//"scanner": "go/scanner", // DUP: prefer text/scanner
-	//"template": "text/template", // DUP: prefer html/template
-	//"pprof": "runtime/pprof", // DUP: prefer net/http/pprof
-	//"rand": "crypto/rand", // DUP: prefer math/rand
+
+	// "scanner": "go/scanner", // DUP: prefer text/scanner
+	// "template": "text/template", // DUP: prefer html/template
+	// "pprof": "runtime/pprof", // DUP: prefer net/http/pprof
+	// "rand": "crypto/rand", // DUP: prefer math/rand
+	//
+	// "builtin":         "builtin", // not a real package
 }
