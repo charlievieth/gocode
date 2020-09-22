@@ -75,12 +75,6 @@ func (this *token_iterator) go_back() bool {
 	return true
 }
 
-var bracket_pairs_map = map[token.Token]token.Token{
-	token.RPAREN: token.LPAREN,
-	token.RBRACK: token.LBRACK,
-	token.RBRACE: token.LBRACE,
-}
-
 func (ti *token_iterator) skip_to_left(left, right token.Token) bool {
 	if ti.token().tok == left {
 		return true
@@ -104,7 +98,15 @@ func (ti *token_iterator) skip_to_left(left, right token.Token) bool {
 // bracket pair, this functions takes nested bracket pairs into account
 func (this *token_iterator) skip_to_balanced_pair() bool {
 	right := this.token().tok
-	left := bracket_pairs_map[right]
+	var left token.Token
+	switch right {
+	case token.RPAREN:
+		left = token.LPAREN
+	case token.RBRACK:
+		left = token.LBRACK
+	case token.RBRACE:
+		left = token.LBRACE
+	}
 	return this.skip_to_left(left, right)
 }
 
