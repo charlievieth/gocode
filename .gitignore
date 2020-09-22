@@ -13,3 +13,4 @@ rename
 *.svg
 *.bash
 *.txt
+/vendor
