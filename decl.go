@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"io"
 	"reflect"
 	"strings"
 	"sync"
@@ -446,16 +445,16 @@ func (d *decl) matches() bool {
 	return true
 }
 
-func (d *decl) pretty_print_type(out io.Writer, canonical_aliases map[string]string) {
+func (d *decl) pretty_print_type(out *bytes.Buffer, canonical_aliases map[string]string) {
 	switch d.class {
 	case decl_type:
 		switch d.typ.(type) {
 		case *ast.StructType:
 			// TODO: not used due to anonymify?
-			fmt.Fprintf(out, "struct")
+			out.WriteString("struct")
 		case *ast.InterfaceType:
 			// TODO: not used due to anonymify?
-			fmt.Fprintf(out, "interface")
+			out.WriteString("interface")
 		default:
 			if d.typ != nil {
 				pretty_print_type_expr(out, d.typ, canonical_aliases)
@@ -1131,22 +1130,22 @@ func get_array_len(e ast.Expr) string {
 	return ""
 }
 
-func pretty_print_type_expr(out io.Writer, e ast.Expr, canonical_aliases map[string]string) {
+func pretty_print_type_expr(out *bytes.Buffer, e ast.Expr, canonical_aliases map[string]string) {
 	switch t := e.(type) {
 	case *ast.StarExpr:
-		fmt.Fprintf(out, "*")
+		out.WriteByte('*')
 		pretty_print_type_expr(out, t.X, canonical_aliases)
 	case *ast.Ident:
 		if strings.HasPrefix(t.Name, "$") {
 			// beautify anonymous types
 			switch t.Name[1] {
 			case 's':
-				fmt.Fprintf(out, "struct")
+				out.WriteString("struct")
 			case 'i':
 				// ok, in most cases anonymous interface is an
 				// empty interface, I'll just pretend that
 				// it's always true
-				fmt.Fprintf(out, "interface{}")
+				out.WriteString("interface{}")
 			}
 		} else if !g_debug && strings.HasPrefix(t.Name, "!") {
 			// these are full package names for disambiguating and pretty
@@ -1160,9 +1159,9 @@ func pretty_print_type_expr(out io.Writer, e ast.Expr, canonical_aliases map[str
 			if alias == "" {
 				alias = t.Name[emarkIdx+1:]
 			}
-			fmt.Fprintf(out, alias)
+			out.WriteString(alias)
 		} else {
-			fmt.Fprintf(out, t.Name)
+			out.WriteString(t.Name)
 		}
 	case *ast.ArrayType:
 		al := ""
@@ -1170,18 +1169,21 @@ func pretty_print_type_expr(out io.Writer, e ast.Expr, canonical_aliases map[str
 			al = get_array_len(t.Len)
 		}
 		if al != "" {
-			fmt.Fprintf(out, "[%s]", al)
+			out.WriteByte('[')
+			out.WriteString(al)
+			out.WriteByte(']')
 		} else {
-			fmt.Fprintf(out, "[]")
+			out.WriteString("[]")
 		}
 		pretty_print_type_expr(out, t.Elt, canonical_aliases)
 	case *ast.SelectorExpr:
 		pretty_print_type_expr(out, t.X, canonical_aliases)
-		fmt.Fprintf(out, ".%s", t.Sel.Name)
+		out.WriteByte('.')
+		out.WriteString(t.Sel.Name)
 	case *ast.FuncType:
-		fmt.Fprintf(out, "func(")
+		out.WriteString("func(")
 		pretty_print_func_field_list(out, t.Params, canonical_aliases)
-		fmt.Fprintf(out, ")")
+		out.WriteByte(')')
 
 		buf := bytes.NewBuffer(make([]byte, 0, 256))
 		nresults := pretty_print_func_field_list(buf, t.Results, canonical_aliases)
@@ -1193,31 +1195,31 @@ func pretty_print_type_expr(out io.Writer, e ast.Expr, canonical_aliases map[str
 			fmt.Fprintf(out, " %s", results)
 		}
 	case *ast.MapType:
-		fmt.Fprintf(out, "map[")
+		out.WriteString("map[")
 		pretty_print_type_expr(out, t.Key, canonical_aliases)
-		fmt.Fprintf(out, "]")
+		out.WriteByte(']')
 		pretty_print_type_expr(out, t.Value, canonical_aliases)
 	case *ast.InterfaceType:
-		fmt.Fprintf(out, "interface{}")
+		out.WriteString("interface{}")
 	case *ast.Ellipsis:
-		fmt.Fprintf(out, "...")
+		out.WriteString("...")
 		pretty_print_type_expr(out, t.Elt, canonical_aliases)
 	case *ast.StructType:
-		fmt.Fprintf(out, "struct")
+		out.WriteString("struct")
 	case *ast.ChanType:
 		switch t.Dir {
 		case ast.RECV:
-			fmt.Fprintf(out, "<-chan ")
+			out.WriteString("<-chan ")
 		case ast.SEND:
-			fmt.Fprintf(out, "chan<- ")
+			out.WriteString("chan<- ")
 		case ast.SEND | ast.RECV:
-			fmt.Fprintf(out, "chan ")
+			out.WriteString("chan ")
 		}
 		pretty_print_type_expr(out, t.Value, canonical_aliases)
 	case *ast.ParenExpr:
-		fmt.Fprintf(out, "(")
+		out.WriteByte('(')
 		pretty_print_type_expr(out, t.X, canonical_aliases)
-		fmt.Fprintf(out, ")")
+		out.WriteByte(')')
 	case *ast.BadExpr:
 		// TODO: probably I should check that in a separate function
 		// and simply discard declarations with BadExpr as a part of their
@@ -1227,7 +1229,7 @@ func pretty_print_type_expr(out io.Writer, e ast.Expr, canonical_aliases map[str
 	}
 }
 
-func pretty_print_func_field_list(out io.Writer, f *ast.FieldList, canonical_aliases map[string]string) int {
+func pretty_print_func_field_list(out *bytes.Buffer, f *ast.FieldList, canonical_aliases map[string]string) int {
 	count := 0
 	if f == nil {
 		return count
@@ -1239,15 +1241,15 @@ func pretty_print_func_field_list(out io.Writer, f *ast.FieldList, canonical_ali
 			for j, name := range field.Names {
 				if name.Name != "?" {
 					hasNonblank = true
-					fmt.Fprintf(out, "%s", name.Name)
+					out.WriteString(name.Name)
 					if j != len(field.Names)-1 {
-						fmt.Fprintf(out, ", ")
+						out.WriteString(", ")
 					}
 				}
 				count++
 			}
 			if hasNonblank {
-				fmt.Fprintf(out, " ")
+				out.WriteByte(' ')
 			}
 		} else {
 			count++
@@ -1258,7 +1260,7 @@ func pretty_print_func_field_list(out io.Writer, f *ast.FieldList, canonical_ali
 
 		// ,
 		if i != len(f.List)-1 {
-			fmt.Fprintf(out, ", ")
+			out.WriteString(", ")
 		}
 	}
 	return count
