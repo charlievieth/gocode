@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/charlievieth/buildutil"
 )
 
 //-------------------------------------------------------------------------
@@ -598,7 +600,7 @@ func find_other_package_files(filename, package_name string) []string {
 }
 
 func file_package_name(filename string) string {
-	name, _ := ReadPackageName(filename)
+	name, _ := buildutil.ReadPackageName(filename, nil)
 	return name
 }
 
