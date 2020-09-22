@@ -50,12 +50,12 @@ type auto_complete_file struct {
 }
 
 func new_auto_complete_file(name string, context *package_lookup_context) *auto_complete_file {
-	p := new(auto_complete_file)
-	p.name = name
-	p.cursor = -1
-	p.fset = token.NewFileSet()
-	p.context = context
-	return p
+	return &auto_complete_file{
+		name:    name,
+		cursor:  -1,
+		fset:    token.NewFileSet(),
+		context: context,
+	}
 }
 
 func (f *auto_complete_file) offset(p token.Pos) int {

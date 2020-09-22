@@ -32,21 +32,19 @@ type package_file_cache struct {
 }
 
 func new_package_file_cache(absname, name string) *package_file_cache {
-	m := new(package_file_cache)
-	m.name = absname
-	m.import_name = name
-	m.mtime = 0
-	m.defalias = ""
-	return m
+	return &package_file_cache{
+		name:        absname,
+		import_name: name,
+	}
 }
 
 // Creates a cache that stays in cache forever. Useful for built-in packages.
 func new_package_file_cache_forever(name, defalias string) *package_file_cache {
-	m := new(package_file_cache)
-	m.name = name
-	m.mtime = -1
-	m.defalias = defalias
-	return m
+	return &package_file_cache{
+		name:     name,
+		mtime:    -1,
+		defalias: defalias,
+	}
 }
 
 func (m *package_file_cache) process_package_data(data []byte) {

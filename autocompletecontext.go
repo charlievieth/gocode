@@ -37,15 +37,16 @@ type out_buffers struct {
 }
 
 func new_out_buffers(ctx *auto_complete_context) *out_buffers {
-	b := new(out_buffers)
-	b.tmpbuf = bytes.NewBuffer(make([]byte, 0, 1024))
-	b.candidates = make([]candidate, 0, 64)
-	b.ctx = ctx
-	b.canonical_aliases = make(map[string]string, len(b.ctx.current.packages))
-	for _, imp := range b.ctx.current.packages {
-		b.canonical_aliases[imp.abspath] = imp.alias
+	aliases := make(map[string]string, len(ctx.current.packages))
+	for _, m := range ctx.current.packages {
+		aliases[m.abspath] = m.alias
 	}
-	return b
+	return &out_buffers{
+		tmpbuf:            bytes.NewBuffer(make([]byte, 0, 1024)),
+		candidates:        make([]candidate, 0, 64),
+		ctx:               ctx,
+		canonical_aliases: aliases,
+	}
 }
 
 func (b *out_buffers) Len() int {

@@ -18,17 +18,15 @@ func new_named_scope(outer *scope, name string) *scope {
 }
 
 func new_scope_size(outer *scope, size int) *scope {
-	s := new(scope)
+	var pkgname string
 	if outer != nil {
-		s.pkgname = outer.pkgname
+		pkgname = outer.pkgname
 	}
-	s.parent = outer
-	if size > 0 {
-		s.entities = make(map[string]*decl, size)
-	} else {
-		s.entities = make(map[string]*decl, size)
+	return &scope{
+		pkgname:  pkgname,
+		parent:   outer,
+		entities: make(map[string]*decl, size),
 	}
-	return s
 }
 
 func new_scope(outer *scope) *scope {

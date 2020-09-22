@@ -318,26 +318,26 @@ func new_decl_full(name string, class decl_class, flags decl_flags, typ, v ast.E
 }
 
 func new_decl(name string, class decl_class, scope *scope) *decl {
-	decl := new(decl)
-	decl.name = name
-	decl.class = class
-	decl.value_index = -1
-	decl.scope = scope
-	return decl
+	return &decl{
+		name:        name,
+		class:       class,
+		value_index: -1,
+		scope:       scope,
+	}
 }
 
 func new_decl_var(name string, typ ast.Expr, value ast.Expr, vindex int, scope *scope) *decl {
 	if name == "_" {
 		return nil
 	}
-	decl := new(decl)
-	decl.name = name
-	decl.class = decl_var
-	decl.typ = typ
-	decl.value = value
-	decl.value_index = vindex
-	decl.scope = scope
-	return decl
+	return &decl{
+		name:        name,
+		class:       decl_var,
+		typ:         typ,
+		value:       value,
+		value_index: vindex,
+		scope:       scope,
+	}
 }
 
 func method_of(d ast.Decl) string {
@@ -363,23 +363,24 @@ func method_of(d ast.Decl) string {
 }
 
 func (other *decl) deep_copy() *decl {
-	d := new(decl)
-	d.name = other.name
-	d.class = other.class
-	d.flags = other.flags
-	d.typ = other.typ
-	d.value = other.value
-	d.value_index = other.value_index
-	d.children = make(map[string]*decl, len(other.children))
-	for key, value := range other.children {
-		d.children[key] = value
+	var children map[string]*decl
+	if len(other.children) != 0 {
+		children = make(map[string]*decl, len(other.children))
+		for k, v := range other.children {
+			children[k] = v
+		}
 	}
-	if other.embedded != nil {
-		d.embedded = make([]ast.Expr, len(other.embedded))
-		copy(d.embedded, other.embedded)
+	return &decl{
+		name:        other.name,
+		class:       other.class,
+		flags:       other.flags,
+		typ:         other.typ,
+		value:       other.value,
+		value_index: other.value_index,
+		embedded:    append(([]ast.Expr)(nil), other.embedded...),
+		children:    children,
+		scope:       other.scope,
 	}
-	d.scope = other.scope
-	return d
 }
 
 func (d *decl) is_rangevar() bool {
@@ -482,9 +483,7 @@ func check_for_builtin_funcs(typ *ast.Ident, c *ast.CallExpr, scope *scope) (ast
 			switch t.Name {
 			case "new":
 				if len(c.Args) > 0 {
-					e := new(ast.StarExpr)
-					e.X = c.Args[0]
-					return e, scope
+					return &ast.StarExpr{X: c.Args[0]}, scope
 				}
 			case "make":
 				if len(c.Args) > 0 {
@@ -781,9 +780,7 @@ func infer_type(v ast.Expr, scope *scope, index int) (ast.Expr, *scope, bool) {
 				break
 			}
 
-			e := new(ast.StarExpr)
-			e.X = it
-			return e, s, false
+			return &ast.StarExpr{X: it}, s, false
 		case token.ARROW:
 			// <-a makes sense only with values
 			it, s, _ := infer_type(t.X, scope, -1)
@@ -860,9 +857,7 @@ func infer_type(v ast.Expr, scope *scope, index int) (ast.Expr, *scope, bool) {
 		it, s = advance_to_type(index_predicate, it, s)
 		switch t := it.(type) {
 		case *ast.ArrayType:
-			e := new(ast.ArrayType)
-			e.Elt = t.Elt
-			return e, s, false
+			return &ast.ArrayType{Elt: t.Elt}, s, false
 		}
 	case *ast.StarExpr:
 		it, s, is_type := infer_type(t.X, scope, -1)
@@ -871,9 +866,7 @@ func infer_type(v ast.Expr, scope *scope, index int) (ast.Expr, *scope, bool) {
 		}
 		if is_type {
 			// if it's a type, add * modifier, make it a 'pointer of' type
-			e := new(ast.StarExpr)
-			e.X = it
-			return e, s, true
+			return &ast.StarExpr{X: it}, s, true
 		} else {
 			it, s := advance_to_type(star_predicate, it, s)
 			if se, ok := it.(*ast.StarExpr); ok {
@@ -1273,32 +1266,24 @@ func pretty_print_func_field_list(out io.Writer, f *ast.FieldList, canonical_ali
 
 func ast_decl_names(d ast.Decl) []*ast.Ident {
 	var names []*ast.Ident
-
 	switch t := d.(type) {
 	case *ast.GenDecl:
 		switch t.Tok {
 		case token.CONST:
 			c := t.Specs[0].(*ast.ValueSpec)
 			names = make([]*ast.Ident, len(c.Names))
-			for i, name := range c.Names {
-				names[i] = name
-			}
+			copy(names, c.Names)
 		case token.TYPE:
 			t := t.Specs[0].(*ast.TypeSpec)
-			names = make([]*ast.Ident, 1)
-			names[0] = t.Name
+			names = []*ast.Ident{t.Name}
 		case token.VAR:
 			v := t.Specs[0].(*ast.ValueSpec)
 			names = make([]*ast.Ident, len(v.Names))
-			for i, name := range v.Names {
-				names[i] = name
-			}
+			copy(names, v.Names)
 		}
 	case *ast.FuncDecl:
-		names = make([]*ast.Ident, 1)
-		names[0] = t.Name
+		names = []*ast.Ident{t.Name}
 	}
-
 	return names
 }
 
