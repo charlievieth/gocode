@@ -20,15 +20,19 @@ func (m *package_file_cache) update_cache() {
 	statmtime := stat.ModTime().UnixNano()
 	if m.mtime != statmtime {
 		m.mtime = statmtime
-		data, err := file_reader.read_file(m.name)
+
+		buf, err := file_reader.read_file_buffer(m.name, stat)
 		if err != nil {
 			return
 		}
-		sum := crc32.Checksum(data, crc32.MakeTable(crc32.Castagnoli))
+
+		sum := crc32.Checksum(buf.Bytes(), crc32.MakeTable(crc32.Castagnoli))
 		if m.checksum != sum || m.size != stat.Size() {
 			m.checksum = sum
 			m.size = stat.Size()
-			m.process_package_data(data)
+			m.process_package_data(buf.Bytes())
 		}
+
+		bufferPool.Put(buf)
 	}
 }

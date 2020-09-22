@@ -242,8 +242,8 @@ type file_reader_type struct {
 	gate chan struct{}
 }
 
-func new_file_reader() *file_reader_type {
-	return &file_reader_type{gate: make(chan struct{}, 100)}
+var file_reader = &file_reader_type{
+	gate: make(chan struct{}, 100),
 }
 
 func (r *file_reader_type) read_file(filename string) ([]byte, error) {
@@ -253,4 +253,33 @@ func (r *file_reader_type) read_file(filename string) ([]byte, error) {
 	return b, err
 }
 
-var file_reader = new_file_reader()
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
+
+// NB: use this for reading .a files since I compile on save they
+// are often the same size, but the updated at timestamp changes.
+func (r *file_reader_type) read_file_buffer(filename string, fi os.FileInfo) (*bytes.Buffer, error) {
+	r.gate <- struct{}{}
+	defer func() { <-r.gate }()
+
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	buf.Grow(int(fi.Size()) + bytes.MinRead)
+
+	_, err = buf.ReadFrom(f)
+	f.Close()
+	if err != nil {
+		bufferPool.Put(buf)
+		return nil, err
+	}
+
+	return buf, nil
+}
