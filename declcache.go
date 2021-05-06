@@ -398,30 +398,38 @@ func find_global_file_impl(imp string, context *package_lookup_context) (string,
 	return "", false
 }
 
-func is_versioned_pkg_name(path string) bool {
-	i := len(path) - 1
-	for i >= 0 && path[i] != '/' {
-		i--
+func is_version(s string) bool {
+	if len(s) < 2 || s[0] != 'v' {
+		return false
 	}
-	if i >= 0 {
-		path = path[i+1:]
-	}
-	if len(path) > 0 && path[0] == 'v' {
-		for i := 1; i < len(path); i++ {
-			c := path[i]
-			if c < '0' || c > '9' {
-				return false
-			}
-			return true
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+func fix_versioned_pkg_name(path string) (string, bool) {
+	if !strings.Contains(path, "/") {
+		return path, false
+	}
+	a := strings.Split(path, "/")
+	for i := len(a) - 1; i > 0; i-- {
+		if is_version(a[i]) {
+			return strings.Join(append(a[:i], a[i+1:]...), "/"), true
+		}
+	}
+	return path, false
 }
 
 func find_global_file(imp string, context *package_lookup_context) (string, bool) {
 	name, ok := find_global_file_impl(imp, context)
-	if !ok && is_versioned_pkg_name(imp) {
-		name, ok = find_global_file_impl(filepath.Dir(imp), context)
+	if !ok {
+		if p, ok := fix_versioned_pkg_name(imp); ok {
+			name, ok = find_global_file_impl(p, context)
+		}
 	}
 	return name, ok
 }
