@@ -14,6 +14,15 @@ import (
 
 const g_debug = false
 
+func init() {
+	if g_debug {
+		log.SetOutput(os.Stderr)
+		log.SetFlags(log.Lshortfile | log.LstdFlags)
+		log.SetPrefix("[gocode] ")
+		log.Println("debug enabled")
+	}
+}
+
 type Candidate struct {
 	Name  string `json:"name"`
 	Type  string `json:"type"`
