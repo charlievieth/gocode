@@ -169,6 +169,7 @@ func abs_path_for_package(filename, p string, context *package_lookup_context) (
 	return find_global_file(p, context)
 }
 
+// TODO: create aliases for versioned modules
 func path_and_alias(imp *ast.ImportSpec) (string, string) {
 	path := ""
 	if imp.Path != nil && len(imp.Path.Value) > 0 {
@@ -428,7 +429,7 @@ func find_global_file(imp string, context *package_lookup_context) (string, bool
 	name, ok := find_global_file_impl(imp, context)
 	if !ok {
 		if p, ok := fix_versioned_pkg_name(imp); ok {
-			name, ok = find_global_file_impl(p, context)
+			return find_global_file_impl(p, context)
 		}
 	}
 	return name, ok
