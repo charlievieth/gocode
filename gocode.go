@@ -150,7 +150,7 @@ func (d *daemon) libPath() string {
 	if d.context.GOPATH != "" {
 		all = append(all, d.pkgpaths(pkg)...)
 	}
-	return strings.Join(all, string(filepath.Separator))
+	return strings.Join(all, string(filepath.ListSeparator))
 }
 
 // pkgpaths, returns all GOPATH pkg paths for Arch arch.
