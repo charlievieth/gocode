@@ -277,7 +277,7 @@ func log_build_context(context *package_lookup_context) {
 // find_global_file returns the file path of the compiled package corresponding to the specified
 // import, and a boolean stating whether such path is valid.
 // TODO: Return only one value, possibly empty string if not found.
-func find_global_file(imp string, context *package_lookup_context) (string, bool) {
+func find_global_file_impl(imp string, context *package_lookup_context) (string, bool) {
 	// gocode synthetically generates the builtin package
 	// "unsafe", since the "unsafe.a" package doesn't really exist.
 	// Thus, when the user request for the package "unsafe" we
@@ -396,6 +396,34 @@ func find_global_file(imp string, context *package_lookup_context) (string, bool
 		log_build_context(context)
 	}
 	return "", false
+}
+
+func is_versioned_pkg_name(path string) bool {
+	i := len(path) - 1
+	for i >= 0 && path[i] != '/' {
+		i--
+	}
+	if i >= 0 {
+		path = path[i+1:]
+	}
+	if len(path) > 0 && path[0] == 'v' {
+		for i := 1; i < len(path); i++ {
+			c := path[i]
+			if c < '0' || c > '9' {
+				return false
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func find_global_file(imp string, context *package_lookup_context) (string, bool) {
+	name, ok := find_global_file_impl(imp, context)
+	if !ok && is_versioned_pkg_name(imp) {
+		name, ok = find_global_file_impl(filepath.Dir(imp), context)
+	}
+	return name, ok
 }
 
 func package_name(file *ast.File) string {
