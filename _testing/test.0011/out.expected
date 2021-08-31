@@ -5,6 +5,7 @@ Found 61 candidates:
   func Call(in []reflect.Value) []reflect.Value
   func CallSlice(in []reflect.Value) []reflect.Value
   func CanAddr() bool
+  func CanConvert(t reflect.Type) bool
   func CanInterface() bool
   func CanSet() bool
   func Cap() int

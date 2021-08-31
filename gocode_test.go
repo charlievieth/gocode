@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -230,6 +231,45 @@ func (t *Test) Expected(err error) error {
 	return err
 }
 
+func checkCandidates(exp []string, cs []Candidate) error {
+	got := make([]string, len(cs))
+	for i, c := range cs {
+		got[i] = c.String()
+	}
+	var missing []string
+	var extra []string
+	m1 := make(map[string]bool, len(exp))
+	m2 := make(map[string]bool, len(got))
+	for _, s := range exp {
+		m1[s] = true
+	}
+	for _, s := range got {
+		if !m1[s] {
+			extra = append(extra, s)
+		}
+		m2[s] = true
+	}
+	for k := range m1 {
+		if !m2[k] {
+			missing = append(missing, k)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	switch {
+	case len(missing) != 0 && len(extra) != 0:
+		return fmt.Errorf("candidates expected: %d got: %d extra: %q missing: %q",
+			len(exp), len(got), extra, missing)
+	case len(missing) != 0:
+		return fmt.Errorf("candidates expected: %d got: %d missing: %q",
+			len(exp), len(got), missing)
+	case len(extra) != 0:
+		return fmt.Errorf("candidates expected: %d got: %d extra: %q",
+			len(exp), len(got), extra)
+	}
+	return nil
+}
+
 func (t Test) Check(conf *Config) error {
 	if conf == nil {
 		return errors.New("Check: nil Config")
@@ -239,13 +279,14 @@ func (t Test) Check(conf *Config) error {
 	if cs == nil {
 		return fmt.Errorf("Check: nil Candidates (%+v)", conf)
 	}
-	if len(cs) != len(t.Result) {
-		return t.Expected(fmt.Errorf("count: expected %d got %d: %s", len(t.Result), len(cs), fn))
+	if err := checkCandidates(t.Result, cs); err != nil {
+		return t.Expected(err)
 	}
+	// NB: this just tests that the sort is correct
 	for i, c := range cs {
 		r := t.Result[i]
 		if c.String() != r {
-			return t.Expected(fmt.Errorf("candidate: expected '%s' got '%s': %s", r, c, fn))
+			return t.Expected(fmt.Errorf("candidate (%d): expected '%s' got '%s': %s", i, r, c, fn))
 		}
 	}
 	if t.Fail {
