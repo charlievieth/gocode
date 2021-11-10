@@ -1,7 +1,7 @@
 package gocode
 
 import (
-	"fmt"
+	"errors"
 	"go/ast"
 	"go/build"
 	"go/parser"
@@ -187,7 +187,7 @@ func path_and_alias(imp *ast.ImportSpec) (string, string) {
 // than the package object file will rebuild it.
 func autobuild(p *build.Package) error {
 	if p.Dir == "" {
-		return fmt.Errorf("no files to build")
+		return errors.New("no files to build")
 	}
 	ps, err := fs.Stat(p.PkgObj)
 	if err != nil {
@@ -288,7 +288,7 @@ func find_global_file_impl(imp string, context *package_lookup_context) (string,
 		return "unsafe", true
 	}
 
-	pkgfile := fmt.Sprintf("%s.a", imp)
+	pkgfile := imp + ".a"
 
 	// if lib-path is defined, use it
 	if g_config.LibPath() != "" {
@@ -299,7 +299,7 @@ func find_global_file_impl(imp string, context *package_lookup_context) (string,
 				return pkg_path, true
 			}
 			// Also check the relevant pkg/OS_ARCH dir for the libpath, if provided.
-			pkgdir := fmt.Sprintf("%s_%s", context.GOOS, context.GOARCH)
+			pkgdir := context.GOOS + "_" + context.GOARCH
 			pkg_path = filepath.Join(p, "pkg", pkgdir, pkgfile)
 			if file_exists(pkg_path) {
 				log_found_package_maybe(imp, pkg_path)
