@@ -119,11 +119,15 @@ func readdir_gofiles_lstat(name string) ([]os.FileInfo, error) {
 		return nil, err
 	}
 
-	n := len(names)
-	if n > 64 {
-		n = 64
+	n := 0
+	for _, s := range names {
+		if has_go_ext(s) {
+			n++
+		}
 	}
-
+	if n == 0 {
+		return nil, nil
+	}
 	out := make([]os.FileInfo, 0, n)
 	for _, lname := range names {
 		if has_go_ext(lname) {
@@ -170,13 +174,9 @@ func is_dir(path string) bool {
 }
 
 func has_prefix(s, prefix string, ignorecase bool) bool {
-	if strings.HasPrefix(s, prefix) {
-		return true
-	}
-	if ignorecase {
-		strings.HasPrefix(strings.ToLower(s), strings.ToLower(prefix))
-	}
-	return false
+	return len(s) >= len(prefix) &&
+		(s[0:len(prefix)] == prefix ||
+			(ignorecase && strings.EqualFold(s[0:len(prefix)], prefix)))
 }
 
 // vendorlessImportPath returns the devendorized version of the provided import path.
