@@ -76,7 +76,7 @@ func (c *DirCache) Readdirnames(path string) ([]string, error) {
 		}
 		return nil, err
 	}
-	if fi.ModTime().After(d.modTime) {
+	if !fi.ModTime().Equal(d.modTime) {
 		names, err := c.readdirnames(path, fi)
 		if err != nil {
 			c.cache.Remove(path)
