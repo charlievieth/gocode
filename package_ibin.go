@@ -154,9 +154,9 @@ func (p *gc_ibin_parser) parse_export(callback func(string, ast.Decl)) {
 	r.Seek(sLen+dLen, io.SeekCurrent)
 
 	// built-in types
-	p.typCache = make(map[uint64]*ibinType)
-	for i, pt := range predeclared {
-		p.typCache[uint64(i)] = &ibinType{typ: pt}
+	p.typCache = make(map[uint64]*ibinType, len(predeclaredIBinTypes))
+	for i := range predeclaredIBinTypes {
+		p.typCache[uint64(i)] = &predeclaredIBinTypes[i]
 	}
 
 	pkgs := make([]ibinPackage, r.uint64())
@@ -178,8 +178,8 @@ func (p *gc_ibin_parser) parse_export(callback func(string, ast.Decl)) {
 		}
 
 		// list of package entities pointing at decl data by name
-		index := map[string]uint64{}
 		nSyms := int(r.uint64())
+		index := make(map[string]uint64, nSyms)
 		for i := 0; i < nSyms; i++ {
 			name := p.stringAt(r.uint64())
 			index[name] = r.uint64()
@@ -190,8 +190,15 @@ func (p *gc_ibin_parser) parse_export(callback func(string, ast.Decl)) {
 		pkgs[i] = pkg
 	}
 
+	n := 0
 	for _, pkg := range pkgs {
-		names := make([]string, 0, len(pkg.index))
+		if len(pkg.index) > n {
+			n = len(pkg.index)
+		}
+	}
+	names := make([]string, n)
+	for _, pkg := range pkgs {
+		names = names[:0]
 		for name := range pkg.index {
 			names = append(names, name)
 		}
@@ -635,4 +642,13 @@ func (r *bimportReader) byte() byte {
 		panic(fmt.Sprintf("declReader.ReadByte: %v", err))
 	}
 	return x
+}
+
+var predeclaredIBinTypes []ibinType
+
+func init() {
+	predeclaredIBinTypes = make([]ibinType, len(predeclared))
+	for i, pt := range predeclared {
+		predeclaredIBinTypes[i] = ibinType{typ: pt}
+	}
 }
