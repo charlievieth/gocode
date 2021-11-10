@@ -1304,24 +1304,6 @@ func ast_decl_values(d ast.Decl) []ast.Expr {
 	return nil
 }
 
-func ast_decl_split(d ast.Decl) []ast.Decl {
-	if t, ok := d.(*ast.GenDecl); ok {
-		decls := make([]ast.Decl, len(t.Specs))
-		for i, s := range t.Specs {
-			decls[i] = &ast.GenDecl{
-				Doc:    t.Doc,
-				TokPos: t.TokPos,
-				Tok:    t.Tok,
-				Lparen: t.Lparen,
-				Specs:  []ast.Spec{s},
-				Rparen: t.Rparen,
-			}
-		}
-		return decls
-	}
-	return []ast.Decl{d}
-}
-
 //-------------------------------------------------------------------------
 // decl_pack
 //-------------------------------------------------------------------------
@@ -1390,17 +1372,31 @@ func (f *decl_pack) type_value_index(i int) (ast.Expr, ast.Expr, int) {
 type foreach_decl_func func(data *foreach_decl_struct)
 
 func foreach_decl(decl ast.Decl, do foreach_decl_func) {
-	decls := ast_decl_split(decl)
 	var data foreach_decl_struct
-	for _, decl := range decls {
-		if !ast_decl_convertable(decl) {
-			continue
+	if t, ok := decl.(*ast.GenDecl); ok {
+		for _, s := range t.Specs {
+			if t.Tok != token.VAR && t.Tok != token.CONST && t.Tok != token.TYPE {
+				continue
+			}
+			d := &ast.GenDecl{
+				Doc:    t.Doc,
+				TokPos: t.TokPos,
+				Tok:    t.Tok,
+				Lparen: t.Lparen,
+				Specs:  []ast.Spec{s},
+				Rparen: t.Rparen,
+			}
+			data.names = ast_decl_names(d)
+			data.typ = ast_decl_type(d)
+			data.values = ast_decl_values(d)
+			data.decl = d
+			do(&data)
 		}
+	} else if ast_decl_convertable(decl) {
 		data.names = ast_decl_names(decl)
 		data.typ = ast_decl_type(decl)
 		data.values = ast_decl_values(decl)
 		data.decl = decl
-
 		do(&data)
 	}
 }
