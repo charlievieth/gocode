@@ -1,3 +1,4 @@
+//go:build darwin || linux
 // +build darwin linux
 
 package fs
@@ -47,6 +48,17 @@ func Stat(name string) (os.FileInfo, error) {
 	var f fileStat
 	fillFileStatFromSys(&f, &sys, name)
 	return &f, nil
+}
+
+func FileExists(name string) bool {
+	var sys syscall.Stat_t
+	return syscall.Lstat(name, &sys) == nil
+}
+
+func IsDir(name string) bool {
+	var sys syscall.Stat_t
+	err := syscall.Stat(name, &sys)
+	return err == nil && sys.Mode&syscall.S_IFMT == syscall.S_IFDIR
 }
 
 // Lstat returns a FileInfo describing the named file.

@@ -162,13 +162,11 @@ func filter_out_shebang(data []byte) ([]byte, int) {
 }
 
 func file_exists(filename string) bool {
-	_, err := fs.Stat(filename)
-	return err == nil
+	return fs.FileExists(filename)
 }
 
 func is_dir(path string) bool {
-	fi, err := fs.Stat(path)
-	return err == nil && fi.IsDir()
+	return fs.IsDir(path)
 }
 
 func has_prefix(s, prefix string, ignorecase bool) bool {
