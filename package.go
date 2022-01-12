@@ -195,20 +195,8 @@ func (c package_cache) append_packages(ps map[string]*package_file_cache, pkgs [
 	}
 }
 
-var g_builtin_unsafe_package = []byte(`
-import
-$$
-package unsafe
-	type @"".Pointer uintptr
-	func @"".Offsetof (? any) uintptr
-	func @"".Sizeof (? any) uintptr
-	func @"".Alignof (? any) uintptr
-
-$$
-`)
-
 func (c package_cache) add_builtin_unsafe_package() {
 	pkg := new_package_file_cache_forever("unsafe", "unsafe")
-	pkg.process_package_data(g_builtin_unsafe_package)
+	pkg.process_package_data([]byte(g_builtin_unsafe_package))
 	c["unsafe"] = pkg
 }
