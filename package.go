@@ -89,6 +89,7 @@ func (m *package_file_cache) process_package_data(data []byte) {
 	}
 
 	prefix := "!" + m.name + "!"
+	// Parse callback
 	pp.parse_export(func(pkg string, decl ast.Decl) {
 		anonymify_ast(decl, decl_foreign, m.scope)
 		if pkg == "" || strings.HasPrefix(pkg, prefix) {

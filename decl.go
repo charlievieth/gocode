@@ -716,6 +716,7 @@ type anonymous_typer struct {
 	scope *scope
 }
 
+// TODO: this may need to be updated for go1.18
 func (a *anonymous_typer) Visit(node ast.Node) ast.Visitor {
 	switch t := node.(type) {
 	case *ast.CompositeLit:
