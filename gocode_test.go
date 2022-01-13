@@ -372,7 +372,7 @@ func newResult(path string) ([]string, error) {
 	var s []string
 	for _, b := range bytes.Split(b[n+1:], []byte{'\n'}) {
 		if len(b) > 1 {
-			s = append(s, string(bytes.TrimSpace(b)))
+			s = append(s, ReplaceInterfaceWithAny(string(bytes.TrimSpace(b))))
 		}
 	}
 	return s, nil

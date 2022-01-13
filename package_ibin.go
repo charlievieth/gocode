@@ -67,17 +67,31 @@ func (r *intReader) uint64() uint64 {
 	return i
 }
 
+// Keep this in sync with constants in iexport.go.
+const (
+	iexportVersionGo1_11   = 0
+	iexportVersionPosCol   = 1
+	iexportVersionGenerics = 2
+	iexportVersionGo1_18   = 2
+
+	iexportVersionCurrent = 2
+)
+
 type gc_ibin_parser struct {
-	data     []byte
-	version  int
-	callback func(pkg string, decl ast.Decl)
-	pfc      *package_file_cache
+	data          []byte
+	exportVersion int64
+	version       int
+	callback      func(pkg string, decl ast.Decl)
+	pfc           *package_file_cache
 
 	stringData  []byte
 	stringCache map[uint64]string
 	declData    []byte
 	typCache    map[uint64]*ibinType
 	pkgCache    map[uint64]ibinPackage
+
+	// TOOD: see if we need this field
+	// tparamIndex map[ident]types.Type
 }
 
 type ibinPackage struct {
@@ -133,16 +147,19 @@ func (p *gc_ibin_parser) init(data []byte, pfc *package_file_cache) {
 	p.pkgCache = make(map[uint64]ibinPackage)
 }
 
+// TODO: error or report version skew ???
 func (p *gc_ibin_parser) parse_export(callback func(string, ast.Decl)) {
 	p.callback = callback
 
 	r := &intReader{bytes.NewReader(p.data)}
-	p.version = int(r.uint64())
-	switch p.version {
-	case 0, 1:
+	version := int64(r.uint64())
+	p.exportVersion = version
+	p.version = int(version)
+	switch version {
+	case iexportVersionGo1_18, iexportVersionPosCol, iexportVersionGo1_11:
 		// ok
 	default:
-		panic(fmt.Errorf("unknown export format version %d", p.version))
+		panic(fmt.Errorf("unknown export format version %d", version))
 	}
 
 	sLen := int64(r.uint64())
@@ -158,6 +175,8 @@ func (p *gc_ibin_parser) parse_export(callback func(string, ast.Decl)) {
 	for i := range predeclaredIBinTypes {
 		p.typCache[uint64(i)] = &predeclaredIBinTypes[i]
 	}
+	// TOOD: see if we need this field
+	// p.tparamIndex = make(map[ident]types.Type)
 
 	pkgs := make([]ibinPackage, r.uint64())
 	for i := range pkgs {
@@ -180,7 +199,7 @@ func (p *gc_ibin_parser) parse_export(callback func(string, ast.Decl)) {
 		// list of package entities pointing at decl data by name
 		nSyms := int(r.uint64())
 		index := make(map[string]uint64, nSyms)
-		for i := 0; i < nSyms; i++ {
+		for ; nSyms > 0; nSyms-- {
 			name := p.stringAt(r.uint64())
 			index[name] = r.uint64()
 		}
@@ -221,6 +240,7 @@ func (p *gc_ibin_parser) doDecl(pkg ibinPackage, name string) *ibinType {
 
 	r := &bimportReader{p: p, currPkg: pkg, version: p.version}
 	r.declReader.Reset(p.declData[off:])
+
 	t := r.obj(name)
 	pkg.declTyp[name] = t
 	return t
@@ -270,14 +290,14 @@ func (r *bimportReader) obj(name string) *ibinType {
 			},
 		})
 		return typ
-	case 'F':
+	case 'F' /*, 'G'*/ :
 		sig := r.signature()
 		r.p.callback(r.currPkg.fullName, &ast.FuncDecl{
 			Name: ast.NewIdent(name),
 			Type: sig,
 		})
 		return &ibinType{typ: sig}
-	case 'T':
+	case 'T' /*, 'U'*/ :
 		// Types can be recursive. We need to setup a stub
 		// declaration before recursing.
 		t := &ibinType{typ: &ast.SelectorExpr{X: ast.NewIdent(r.currPkg.fullName), Sel: ast.NewIdent(name)}}
@@ -312,6 +332,8 @@ func (r *bimportReader) obj(name string) *ibinType {
 		}
 		return t
 
+	// case 'P':
+
 	case 'V':
 		typ := r.typ()
 		r.p.callback(r.currPkg.fullName, &ast.GenDecl{
@@ -326,8 +348,13 @@ func (r *bimportReader) obj(name string) *ibinType {
 
 		return typ
 	default:
-		panic(fmt.Sprintf("unexpected tag: %v", tag))
+		panic(fmt.Sprintf("unexpected tag: %v name: %q", tag, name))
 	}
+}
+
+type ident struct {
+	pkg  string
+	name string
 }
 
 const predeclReserved = 32
@@ -345,6 +372,9 @@ const (
 	signatureType
 	structType
 	interfaceType
+	typeParamType
+	instanceType
+	unionType
 )
 
 // we don't care about that, let's just skip it
@@ -574,6 +604,8 @@ func (r *bimportReader) doType() *ibinType {
 	}
 }
 
+// TODO: ast.FuncType has a new field: TypeParams and we likely need to add
+// the rparams, tparams []*types.TypeParam to this method.
 func (r *bimportReader) signature() *ast.FuncType {
 	params := r.paramList()
 	results := r.paramList()
