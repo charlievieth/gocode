@@ -1,5 +1,20 @@
 package gocode
 
+/* TODO: update this for go1.18
+
+Commits:
+  * https://github.com/golang/go/commit/fd2f4b58b34effdbdacba41e0c36fa701c6dfa27
+  * https://github.com/golang/tools/commit/52e95274200fabcac2b99138b37c22fec3ae0460
+  * https://github.com/golang/go/issues/47654
+
+git diff --no-index \
+	/Users/cvieth/go/src/github.com/charlievieth/gocode/package_ibin.go \
+	/Users/cvieth/Projects/go-pkg-src/dev/go/src/go/internal/gcimporter/iimport.go
+
+TODO:
+	* Add tests from golang.org/x/tools/go/internal/gcimporter/iexport_test.go
+*/
+
 //-------------------------------------------------------------------------
 // gc_ibin_parser
 //
@@ -91,7 +106,7 @@ type gc_ibin_parser struct {
 	pkgCache    map[uint64]ibinPackage
 
 	// TOOD: see if we need this field
-	// tparamIndex map[ident]types.Type
+	tparamIndex map[ident]*ibinType
 }
 
 type ibinPackage struct {
@@ -176,7 +191,7 @@ func (p *gc_ibin_parser) parse_export(callback func(string, ast.Decl)) {
 		p.typCache[uint64(i)] = &predeclaredIBinTypes[i]
 	}
 	// TOOD: see if we need this field
-	// p.tparamIndex = make(map[ident]types.Type)
+	p.tparamIndex = make(map[ident]*ibinType)
 
 	pkgs := make([]ibinPackage, r.uint64())
 	for i := range pkgs {
@@ -290,19 +305,38 @@ func (r *bimportReader) obj(name string) *ibinType {
 			},
 		})
 		return typ
-	case 'F' /*, 'G'*/ :
-		sig := r.signature()
+	case 'F', 'G':
+		var tparams []*ibinType
+		if tag == 'G' {
+			tparams = r.tparamList()
+		}
+		sig := r.signature(nil, tparams)
+		// TODO: do we actually need tparams ???
 		r.p.callback(r.currPkg.fullName, &ast.FuncDecl{
 			Name: ast.NewIdent(name),
 			Type: sig,
 		})
 		return &ibinType{typ: sig}
-	case 'T' /*, 'U'*/ :
+	case 'T', 'U':
 		// Types can be recursive. We need to setup a stub
 		// declaration before recursing.
-		t := &ibinType{typ: &ast.SelectorExpr{X: ast.NewIdent(r.currPkg.fullName), Sel: ast.NewIdent(name)}}
+		t := &ibinType{typ: &ast.SelectorExpr{
+			X:   ast.NewIdent(r.currPkg.fullName),
+			Sel: ast.NewIdent(name),
+		}}
+		// TODO: figure out how to store/represent union types
+		//
+		// From: go/internal/gcimporter/iimport.go
+		//
+		// Declare obj before calling r.tparamList, so the new type name is recognized
+		// if used in the constraint of one of its own typeparams (see #48280).
 		r.currPkg.declTyp[name] = t
-		t.und = r.p.typAt(r.uint64())
+		if tag == 'U' {
+			_ = r.tparamList()
+		}
+
+		t.und = r.p.typAt(r.uint64()) // underlying
+
 		r.p.callback(r.currPkg.fullName, &ast.GenDecl{
 			Tok: token.TYPE,
 			Specs: []ast.Spec{
@@ -313,26 +347,66 @@ func (r *bimportReader) obj(name string) *ibinType {
 			},
 		})
 
-		if _, ok := t.und.typ.(*ast.InterfaceType); ok { // interfaces cannot have methods
-			return t
-		}
+		if !isInterface(t.und.typ) {
+			// read associated methods
+			for n := r.uint64(); n > 0; n-- {
+				r.pos() // mpos
+				mname := r.ident()
+				recv := &ast.FieldList{List: []*ast.Field{r.param()}}
 
-		// read associated methods
-		for n := r.uint64(); n > 0; n-- {
-			r.pos()
-			mname := r.ident()
-			recv := &ast.FieldList{List: []*ast.Field{r.param()}}
-			msig := r.signature()
-			strip_method_receiver(recv)
-			r.p.callback(r.currPkg.fullName, &ast.FuncDecl{
-				Recv: recv,
-				Name: ast.NewIdent(mname),
-				Type: msig,
-			})
+				// TODO: handle targs
+
+				msig := r.signature(nil, nil)
+				strip_method_receiver(recv)
+				r.p.callback(r.currPkg.fullName, &ast.FuncDecl{
+					Recv: recv,
+					Name: ast.NewIdent(mname),
+					Type: msig,
+				})
+			}
 		}
 		return t
 
-	// case 'P':
+	case 'P':
+		// We need to "declare" a typeparam in order to have a name that
+		// can be referenced recursively (if needed) in the type param's
+		// bound.
+		if r.p.exportVersion < iexportVersionGenerics {
+			panic("unexpected type param type")
+		}
+		// Remove the "path" from the type param name that makes it unique
+		ix := strings.LastIndex(name, ".")
+		if ix < 0 {
+			panic("missing path for type param")
+		}
+		// TODO: determine the correct ast type
+		tn := &ibinType{typ: &ast.SelectorExpr{
+			X:   ast.NewIdent(r.currPkg.fullName),
+			Sel: ast.NewIdent(name[ix+1:]),
+		}}
+		t := tn // WARN
+		// To handle recursive references to the typeparam within its
+		// bound, save the partial type in tparamIndex before reading the bounds.
+		id := ident{r.currPkg.fullName, name}
+		r.p.tparamIndex[id] = t
+
+		var implicit bool
+		if r.p.exportVersion >= iexportVersionGo1_18 {
+			implicit = r.bool()
+		}
+		constraint := r.typ()
+		_ = constraint // WARN
+		if implicit {
+			// iface, _ := constraint.(*types.Interface)
+			// if iface == nil {
+			// 	errorf("non-interface constraint marked implicit")
+			// }
+			// iface.MarkImplicit()
+		}
+		// t.SetConstraint(constraint)
+
+		// WARN: callback !!!
+		return t
 
 	case 'V':
 		typ := r.typ()
@@ -379,25 +453,40 @@ const (
 
 // we don't care about that, let's just skip it
 func (r *bimportReader) pos() {
-	if r.version == 0 {
-		if r.int64() != deltaNewFile {
-		} else if l := r.int64(); l == -1 {
-		} else {
-			r.string()
-		}
+	if r.version >= 1 {
+		r.posv1()
 	} else {
-		delta := r.int64()
+		r.posv0()
+	}
+}
+
+func (r *bimportReader) posv0() {
+	if r.int64() != deltaNewFile {
+		// pass
+	} else if l := r.int64(); l == -1 {
+		// pass
+	} else {
+		r.string()
+	}
+}
+
+func (r *bimportReader) posv1() {
+	delta := r.int64()
+	if delta&1 != 0 {
+		delta = r.int64()
 		if delta&1 != 0 {
-			delta = r.int64()
-			if delta&1 != 0 {
-				r.string()
-			}
+			r.string()
 		}
 	}
 }
 
 func (r *bimportReader) value() *ibinType {
 	t := r.typ()
+	if r.p.exportVersion >= iexportVersionGo1_18 {
+		// TODO: add support for using the kind
+		_ = constant.Kind(r.int64())
+	}
+
 	typ := t.underlying()
 	ident, ok := typ.(*ast.Ident)
 	if !ok {
@@ -551,7 +640,7 @@ func (r *bimportReader) doType() *ibinType {
 		return &ibinType{typ: &ast.MapType{Key: key.typ, Value: val.typ}}
 	case signatureType:
 		r.currPkg = r.pkg()
-		return &ibinType{typ: r.signature()}
+		return &ibinType{typ: r.signature(nil, nil)}
 
 	case structType:
 		r.currPkg = r.pkg()
@@ -562,17 +651,19 @@ func (r *bimportReader) doType() *ibinType {
 			fname := r.ident()
 			ftyp := r.typ()
 			emb := r.bool()
-			r.string()
+			r.string() // tag
 			var names []*ast.Ident
 			if fname != "" && !emb {
 				names = []*ast.Ident{ast.NewIdent(fname)}
 			}
 
+			// TODO: add tag?
 			fields[i] = &ast.Field{Names: names, Type: ftyp.typ}
 		}
 
 		return &ibinType{typ: &ast.StructType{Fields: &ast.FieldList{List: fields}}}
 
+	// TODO: this probably needs to be updated for go1.18
 	case interfaceType:
 		r.currPkg = r.pkg()
 
@@ -581,6 +672,7 @@ func (r *bimportReader) doType() *ibinType {
 		for i := 0; i < numEmbeds; i++ {
 			r.pos()
 			t := r.typ()
+			// TODO: this differs
 			if named, ok := t.typ.(*ast.SelectorExpr); ok {
 				embeddeds = append(embeddeds, named)
 			}
@@ -590,7 +682,7 @@ func (r *bimportReader) doType() *ibinType {
 		for i := range methods {
 			r.pos()
 			mname := r.ident()
-			msig := r.signature()
+			msig := r.signature(nil, nil)
 			methods[i] = &ast.Field{
 				Names: []*ast.Ident{ast.NewIdent(mname)},
 				Type:  msig,
@@ -601,12 +693,76 @@ func (r *bimportReader) doType() *ibinType {
 		}
 
 		return &ibinType{typ: &ast.InterfaceType{Methods: &ast.FieldList{List: methods}}}
+
+	case typeParamType:
+		if r.p.exportVersion < iexportVersionGenerics {
+			panic("unexpected type param type")
+		}
+		pkg, name := r.qualifiedIdent()
+		id := ident{pkg.fullName, name}
+		if t, ok := r.p.tparamIndex[id]; ok {
+			// We're already in the process of importing this typeparam.
+			return t
+		}
+		// Otherwise, import the definition of the typeparam now.
+		r.p.doDecl(pkg, name)
+		return r.p.tparamIndex[id]
+
+	// WARN: handle
+	case instanceType:
+		if r.p.exportVersion < iexportVersionGenerics {
+			panic("unexpected type param type")
+		}
+		// pos does not matter for instances: they are positioned on the original
+		// type.
+		r.pos()
+		len := r.uint64()
+		targs := make([]*ibinType, len)
+		for i := range targs {
+			targs[i] = r.typ()
+		}
+		baseType := r.typ()
+		_ = baseType
+
+		// The imported instantiated type doesn't include any methods, so
+		// we must always use the methods of the base (orig) type.
+		// TODO provide a non-nil *Context
+		// t, _ := types.Instantiate(nil, baseType, targs, false)
+		// return t
+
+		// WARN: figure out how to implement this
+		// Maybe: ast.TypeSpec
+
+		// WARN WARN WARN
+		// This is wrong
+		return &ibinType{typ: &ast.FuncType{}}
+
+	// WARN: handle
+	case unionType:
+		if r.p.exportVersion < iexportVersionGenerics {
+			panic("unexpected type param type")
+		}
+
+		// terms := make([]*types.Term, r.uint64())
+		// for i := range terms {
+		// 	terms[i] = types.NewTerm(r.bool(), r.typ())
+		// }
+		n := r.uint64()
+		for ; n > 0; n-- {
+			_ = r.bool()
+			_ = r.typ()
+		}
+		_ = ast.UnaryExpr{}
+
+		// WARN WARN WARN
+		// This is wrong
+		return &ibinType{typ: &ast.FuncType{}}
 	}
 }
 
 // TODO: ast.FuncType has a new field: TypeParams and we likely need to add
 // the rparams, tparams []*types.TypeParam to this method.
-func (r *bimportReader) signature() *ast.FuncType {
+func (r *bimportReader) signature(rparams, tparams []*ibinType) *ast.FuncType {
 	params := r.paramList()
 	results := r.paramList()
 	if params != nil && len(params.List) > 0 {
@@ -615,7 +771,20 @@ func (r *bimportReader) signature() *ast.FuncType {
 			last.Type = &ast.Ellipsis{Elt: last.Type.(*ast.ArrayType).Elt}
 		}
 	}
+	// TODO: use rparams and tparams
 	return &ast.FuncType{Params: params, Results: results}
+}
+
+func (r *bimportReader) tparamList() []*ibinType {
+	n := r.uint64()
+	if n == 0 {
+		return nil
+	}
+	xs := make([]*ibinType, n)
+	for i := range xs {
+		xs[i] = r.typ()
+	}
+	return xs
 }
 
 func (r *bimportReader) paramList() *ast.FieldList {
@@ -639,7 +808,15 @@ func (r *bimportReader) param() *ast.Field {
 	}
 }
 
-func (r *bimportReader) typ() *ibinType   { return r.p.typAt(r.uint64()) }
+func (r *bimportReader) typ() *ibinType {
+	return r.p.typAt(r.uint64())
+}
+
+func isInterface(t ast.Expr) bool {
+	_, ok := t.(*ast.InterfaceType)
+	return ok
+}
+
 func (r *bimportReader) kind() itag       { return itag(r.uint64()) }
 func (r *bimportReader) pkg() ibinPackage { return r.p.pkgAt(r.uint64()) }
 func (r *bimportReader) string() string   { return r.p.stringAt(r.uint64()) }
