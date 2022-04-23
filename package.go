@@ -89,6 +89,7 @@ func (m *package_file_cache) process_package_data(data []byte) {
 	}
 
 	prefix := "!" + m.name + "!"
+	// Parse callback
 	pp.parse_export(func(pkg string, decl ast.Decl) {
 		anonymify_ast(decl, decl_foreign, m.scope)
 		if pkg == "" || strings.HasPrefix(pkg, prefix) {
@@ -195,20 +196,8 @@ func (c package_cache) append_packages(ps map[string]*package_file_cache, pkgs [
 	}
 }
 
-var g_builtin_unsafe_package = []byte(`
-import
-$$
-package unsafe
-	type @"".Pointer uintptr
-	func @"".Offsetof (? any) uintptr
-	func @"".Sizeof (? any) uintptr
-	func @"".Alignof (? any) uintptr
-
-$$
-`)
-
 func (c package_cache) add_builtin_unsafe_package() {
 	pkg := new_package_file_cache_forever("unsafe", "unsafe")
-	pkg.process_package_data(g_builtin_unsafe_package)
+	pkg.process_package_data([]byte(g_builtin_unsafe_package))
 	c["unsafe"] = pkg
 }
