@@ -11,7 +11,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/mdempsky/gocode/internal/lookdot"
+	"github.com/mdempsky/gocode/pkg/lookdot"
 )
 
 const src = `

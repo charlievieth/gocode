@@ -14,8 +14,8 @@ import (
 
 	"runtime/debug"
 
-	"github.com/mdempsky/gocode/internal/cache"
-	"github.com/mdempsky/gocode/internal/suggest"
+	"github.com/mdempsky/gocode/pkg/cache"
+	"github.com/mdempsky/gocode/pkg/suggest"
 )
 
 func doClient() {

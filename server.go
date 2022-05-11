@@ -13,9 +13,9 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/mdempsky/gocode/internal/cache"
-	"github.com/mdempsky/gocode/internal/gbimporter"
-	"github.com/mdempsky/gocode/internal/suggest"
+	"github.com/mdempsky/gocode/pkg/cache"
+	"github.com/mdempsky/gocode/pkg/gbimporter"
+	"github.com/mdempsky/gocode/pkg/suggest"
 )
 
 func doServer(cache bool) {

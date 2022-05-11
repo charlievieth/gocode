@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mdempsky/gocode/internal/lookdot"
+	"github.com/mdempsky/gocode/pkg/lookdot"
 )
 
 type Config struct {

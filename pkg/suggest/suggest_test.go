@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mdempsky/gocode/internal/suggest"
+	"github.com/mdempsky/gocode/pkg/suggest"
 )
 
 var testDirFlag = flag.String("testdir", "", "specify a directory to run the test on")
