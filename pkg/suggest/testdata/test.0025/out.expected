@@ -1,5 +1,7 @@
-Found 4 candidates:
+Found 6 candidates:
+  func Add(ptr unsafe.Pointer, len IntegerType) unsafe.Pointer
   func Alignof(x Type) uintptr
   func Offsetof(x Type) uintptr
   func Sizeof(x Type) uintptr
+  func Slice(ptr *Type, len IntegerType) []Type
   type Pointer unsafe.Pointer
