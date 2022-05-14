@@ -18,6 +18,8 @@ import (
 	"github.com/mdempsky/gocode/pkg/lookdot"
 )
 
+//go:generate go run -tags generate genstdlib.go
+
 type Config struct {
 	Importer           types.Importer
 	Logf               func(fmt string, args ...interface{})
