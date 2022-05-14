@@ -289,7 +289,7 @@ func deduceCursorContext(file []byte, cursor int) (cursorContext, string, string
 		// we're '<whatever>.<ident>'
 		// parse <ident> as Partial and figure out decl
 
-		partial = tok.String()
+		partial = tok.@
 		// If it happens that the cursor is past the end of the literal,
 		// means there is a space between the literal and the cursor, think
 		// of it as no context, because that's what it really is.

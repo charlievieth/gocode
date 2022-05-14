@@ -1,6 +1,8 @@
 *.8
 *.a
 *.out
+*.txt
+*.test
 gocode
 gocode.exe
 goremote
@@ -10,3 +12,4 @@ listidents
 showcursor
 showsmap
 rename
+/vendor

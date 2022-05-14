@@ -4,23 +4,36 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/scanner"
 	"go/token"
 	"go/types"
-	"io/ioutil"
+	"hash/maphash"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/charlievieth/buildutil"
+	"github.com/mdempsky/gocode/pkg/cache"
 	"github.com/mdempsky/gocode/pkg/lookdot"
 )
 
 //go:generate go run -tags generate genstdlib.go
 
 type Config struct {
+	// TODO:
+	// 	1. initialize and (optionally) match to file (if excluded)
+	// 	   this might require using a per-Suggest Context to avoid
+	// 	   races (basically, this needs to be read-only)
+	// 	2. make sure we upgrade any nil funcs to the fast versions
+	Context *build.Context
+
 	Importer           types.Importer
 	Logf               func(fmt string, args ...interface{})
 	Builtin            bool
@@ -28,7 +41,8 @@ type Config struct {
 	UnimportedPackages bool
 }
 
-var cache = struct {
+// TODO: use an LRU fileCache for this???
+var fileCache = struct {
 	lock  sync.Mutex
 	files map[string]fileCacheEntry
 	fset  *token.FileSet
@@ -40,6 +54,8 @@ var cache = struct {
 type fileCacheEntry struct {
 	file  *ast.File
 	mtime time.Time
+	size  int64
+	hash  uint64
 }
 
 // Suggest returns a list of suggestion candidates and the length of
@@ -49,7 +65,9 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 		return nil, 0
 	}
 
-	fset, pos, pkg, imports := c.analyzePackage(filename, data, cursor)
+	filename = filepath.Clean(filename)
+	ctxt := c.context(filename, data)
+	fset, pos, pkg, imports := c.analyzePackage(ctxt, filename, data, cursor)
 	if pkg == nil {
 		c.Logf("no package found for %s", filename)
 		return nil, 0
@@ -111,6 +129,19 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 	return res, len(partial)
 }
 
+func (c *Config) context(filename string, data []byte) *build.Context {
+	// TODO: match Context to filename
+	dupe := build.Default
+	if c.Context != nil {
+		dupe = *c.Context
+	}
+	ctxt := &dupe
+	// WARN
+	ctxt.OpenFile = cache.ContextOpenFile(ctxt)
+	return ctxt
+}
+
+/*
 func (c *Config) parseOtherFile(filename string) *ast.File {
 	entry := cache.files[filename]
 
@@ -133,23 +164,143 @@ func (c *Config) parseOtherFile(filename string) *ast.File {
 
 	return entry.file
 }
+*/
 
-func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*token.FileSet, token.Pos, *types.Package, []*ast.ImportSpec) {
-	cache.lock.Lock()
-	defer cache.lock.Unlock()
+var hashSeed = maphash.MakeSeed()
 
-	// Reset every 1GB of files so fset doesn't overflow.
-	if cache.fset.Base() >= 1e9 {
-		cache.fset = token.NewFileSet()
-		cache.files = make(map[string]fileCacheEntry)
+func hashData(b []byte) uint64 {
+	var h maphash.Hash
+	h.SetSeed(hashSeed)
+	_, _ = h.Write(b)
+	return h.Sum64()
+}
+
+func readFile(name string, sizeHint int64) ([]byte, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
 	}
 
+	if sizeHint < 0 {
+		if fi, err := f.Stat(); err == nil {
+			sizeHint = fi.Size()
+		}
+	}
+	var size int
+	if int64(int(sizeHint)) == sizeHint {
+		size = int(sizeHint)
+	}
+	size += 512 // extra bytes in case the size hint is short
+
+	data := make([]byte, 0, size)
+	for {
+		if len(data) >= cap(data) {
+			d := append(data[:cap(data)], 0)
+			data = d[:len(data)]
+		}
+		n, err := f.Read(data[len(data):cap(data)])
+		data = data[:len(data)+n]
+		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			return data, err
+		}
+	}
+}
+
+func openFile(ctxt *build.Context, name string) (io.ReadCloser, error) {
+	if fn := ctxt.OpenFile; fn != nil {
+		return fn(name)
+	}
+	return os.Open(name)
+}
+
+// TODO: check file content before invalidating cache
+func (c *Config) parseOtherFile(ctxt *build.Context, filename string) *ast.File {
+	entry := fileCache.files[filename]
+
+	fi, err := os.Stat(filename)
+	if err != nil {
+		// TODO(mdempsky): How to handle this cleanly?
+		panic(err)
+	}
+
+	// WARN: use Context.OpenFile since it caches the results
+
+	if !entry.mtime.Equal(fi.ModTime()) {
+		// Check if only the modtime changed
+		// data, err := readFile(filename, fi.Size()) // TODO: use Context.OpenFile
+		// if err != nil {
+		// 	// WARN: handle
+		// 	// if os.IsNotExist(err) {
+		// 	// }
+		// }
+
+		rc, err := openFile(ctxt, filename)
+		if err != nil {
+			// WARN: handle
+			// if os.IsNotExist(err) {
+			// }
+		}
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			// WARN: handle
+			// if os.IsNotExist(err) {
+			// }
+		}
+
+		hash := hashData(data)
+		if hash == entry.hash && entry.size == fi.Size() {
+			return entry.file
+		}
+
+		file, err := parser.ParseFile(fileCache.fset, filename, data, 0)
+		if err != nil {
+			// WARN: do we want to cache invalid files ???
+			c.logParseError(fmt.Sprintf("Error parsing %q", filename), err)
+		}
+		trimAST(file, token.NoPos)
+
+		entry = fileCacheEntry{
+			file:  file,
+			mtime: fi.ModTime(),
+			size:  fi.Size(),
+			hash:  hash,
+		}
+		fileCache.files[filename] = entry
+	}
+
+	return entry.file
+}
+
+// TODO: return this from analyzePackage() and don't export
+type Package struct {
+	FileSet     *token.FileSet
+	Pos         token.Pos
+	Package     *types.Package
+	ImportSpecs []*ast.ImportSpec
+}
+
+func (c *Config) analyzePackage(ctxt *build.Context, filename string, data []byte, cursor int) (*token.FileSet, token.Pos, *types.Package, []*ast.ImportSpec) {
+	fileCache.lock.Lock()
+	defer fileCache.lock.Unlock()
+
+	// Reset every 1GB of files so fset doesn't overflow.
+	if fileCache.fset.Base() >= 1e9 {
+		fileCache.fset = token.NewFileSet()
+		fileCache.files = make(map[string]fileCacheEntry)
+	}
+
+	// TODO: increase the number of entries
+	//
 	// Delete random files to keep the cache at most 100 entries.
-	for k := range cache.files {
-		if len(cache.files) <= 100 {
+	for k := range fileCache.files {
+		if len(fileCache.files) <= 100 {
 			break
 		}
-		delete(cache.files, k)
+		delete(fileCache.files, k)
 	}
 
 	// If we're in trailing white space at the end of a scope,
@@ -157,7 +308,7 @@ func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*toke
 	// still be in scope there.
 	filesemi := bytes.Join([][]byte{data[:cursor], []byte(";"), data[cursor:]}, nil)
 
-	fileAST, err := parser.ParseFile(cache.fset, filename, filesemi, parser.AllErrors)
+	fileAST, err := parser.ParseFile(fileCache.fset, filename, filesemi, parser.AllErrors)
 	if err != nil {
 		c.logParseError("Error parsing input file (outer block)", err)
 	}
@@ -165,21 +316,21 @@ func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*toke
 	if astPos == 0 {
 		return nil, token.NoPos, nil, nil
 	}
-	pos := cache.fset.File(astPos).Pos(cursor)
+	pos := fileCache.fset.File(astPos).Pos(cursor)
 	trimAST(fileAST, pos)
 
 	files := []*ast.File{fileAST}
-	for _, otherName := range c.findOtherPackageFiles(filename, fileAST.Name.Name) {
-		files = append(files, c.parseOtherFile(otherName))
+	for _, otherName := range c.findOtherPackageFiles(ctxt, filename, fileAST.Name.Name) {
+		files = append(files, c.parseOtherFile(ctxt, otherName))
 	}
 
 	cfg := types.Config{
 		Importer: c.Importer,
 		Error:    func(err error) {},
 	}
-	pkg, _ := cfg.Check("", cache.fset, files, nil)
+	pkg, _ := cfg.Check("", fileCache.fset, files, nil)
 
-	return cache.fset, pos, pkg, fileAST.Imports
+	return fileCache.fset, pos, pkg, fileAST.Imports
 }
 
 // trimAST clears any part of the AST not relevant to type checking
@@ -232,20 +383,55 @@ func (c *Config) packageCandidates(pkg *types.Package, b *candidateCollector) {
 	c.scopeCandidates(pkg.Scope(), token.NoPos, b)
 }
 
-func (c *Config) scopeCandidates(scope *types.Scope, pos token.Pos, b *candidateCollector) {
-	seen := make(map[string]bool)
-	for scope != nil {
-		for _, name := range scope.Names() {
-			if seen[name] {
-				continue
-			}
-			seen[name] = true
-			_, obj := scope.LookupParent(name, pos)
-			if obj != nil {
-				b.appendObject(obj)
-			}
+func mergeStrings(s1, s2, scratch []string) []string {
+	a := scratch[0:cap(scratch)]
+	i, j, k := 0, 0, 0
+	for ; i < len(s1) && j < len(s2) && k < len(a); k++ {
+		if s1[i] == s2[j] {
+			a[k] = s2[j]
+			i++
+			j++
+		} else if s1[i] < s2[j] {
+			a[k] = s1[i]
+			i++
+		} else {
+			a[k] = s2[j]
+			j++
 		}
-		scope = scope.Parent()
+	}
+	if i < len(s1) {
+		k += copy(a[k:], s1[i:])
+	}
+	if j < len(s2) {
+		k += copy(a[k:], s2[j:])
+	}
+	return a[:k]
+}
+
+func (c *Config) scopeCandidates(scope *types.Scope, pos token.Pos, b *candidateCollector) {
+	// Previously this method used a map to skip duplicate
+	// names, which was slow.
+	var all []string
+	var scratch []string
+	for sc := scope; sc != nil; sc = sc.Parent() {
+		names := sc.Names()
+		if len(all) == 0 {
+			all = names
+			continue
+		}
+		if len(names) > 0 {
+			if n := len(all) + len(names); cap(scratch) < n {
+				// TODO: can we use append for this?
+				scratch = make([]string, n)
+			}
+			all = mergeStrings(all, names, scratch)
+		}
+	}
+	for _, name := range all {
+		_, obj := scope.LookupParent(name, pos)
+		if obj != nil {
+			b.appendObject(obj)
+		}
 	}
 }
 
@@ -263,24 +449,64 @@ func (c *Config) logParseError(intro string, err error) {
 	}
 }
 
-func (c *Config) findOtherPackageFiles(filename, pkgName string) []string {
+type fileEntryName interface {
+	Name() string
+}
+
+// func readdirnames(dirname string) ([]string, error) {
+// 	f, err := os.Open(dirname)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	names, err := f.Readdirnames(-1)
+// 	f.Close()
+// 	return names, err
+// }
+
+func readDir(ctxt *build.Context, name string) ([]fs.DirEntry, error) {
+	if fn := ctxt.ReadDir; fn != nil {
+		fis, err := fn(name)
+		if err != nil {
+			return nil, err
+		}
+		des := make([]fs.DirEntry, len(fis))
+		for i, fi := range fis {
+			des[i] = fs.FileInfoToDirEntry(fi)
+		}
+		return des, nil
+	}
+	return os.ReadDir(name)
+}
+
+func min(a, b int) int {
+	if a <= b {
+		return a
+	}
+	return b
+}
+
+// package_files_tests
+func (c *Config) findOtherPackageFiles(ctxt *build.Context, filename, pkgName string) []string {
 	if filename == "" {
 		return nil
 	}
 
 	dir, file := filepath.Split(filename)
-	dents, err := ioutil.ReadDir(dir)
+
+	// TODO: use Context.ReadDir
+	dents, err := os.ReadDir(dir)
 	if err != nil {
-		panic(err)
+		panic(err) // WARN WARN
 	}
 	isTestFile := strings.HasSuffix(file, "_test.go")
 
-	// TODO(mdempsky): Use go/build.(*Context).MatchFile or
-	// something to properly handle build tags?
-	var out []string
-	for _, dent := range dents {
-		name := dent.Name()
-		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+	a := dents[:0]
+	for _, d := range dents {
+		if d.Type().IsDir() {
+			continue
+		}
+		name := d.Name()
+		if len(name) == 0 || name[0] == '.' || name[0] == '_' {
 			continue
 		}
 		if name == file || !strings.HasSuffix(name, ".go") {
@@ -289,12 +515,54 @@ func (c *Config) findOtherPackageFiles(filename, pkgName string) []string {
 		if !isTestFile && strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-
-		abspath := filepath.Join(dir, name)
-		if pkgNameFor(abspath) == pkgName {
-			out = append(out, abspath)
-		}
+		a = append(a, d)
 	}
+	dents = a
+
+	// WARN: 4
+	if len(dents) == 0 {
+		return nil
+	}
+	if len(dents) <= 2 {
+		out := make([]string, 0, 2)
+		for _, d := range dents {
+			path := dir + d.Name()
+			pname, ok := buildutil.ShortImport(ctxt, path)
+			if ok && pname == pkgName {
+				out = append(out, path)
+			}
+		}
+		return out
+	}
+
+	// TODO(mdempsky): Use go/build.(*Context).MatchFile or
+	// something to properly handle build tags?
+
+	n := min(len(dents), 4)
+	workc := make(chan string, min(len(dents), n*16))
+	out := make([]string, 0, len(dents))
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for path := range workc {
+				pname, ok := buildutil.ShortImport(ctxt, path)
+				if ok && pname == pkgName {
+					mu.Lock()
+					out = append(out, path)
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	for _, d := range dents {
+		workc <- dir + d.Name()
+	}
+	close(workc)
+	wg.Wait()
+	sort.Strings(out)
 
 	return out
 }

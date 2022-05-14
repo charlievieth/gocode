@@ -9,5 +9,5 @@ import (
 
 // SamePath checks two file paths for their equality based on the current filesystem
 func SamePath(a, b string) bool {
-	return strings.EqualFold(a, b)
+	return a == b || strings.EqualFold(a, b)
 }

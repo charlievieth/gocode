@@ -73,6 +73,7 @@ func classifyObject(obj types.Object) string {
 	case *types.Var:
 		return "var"
 	}
+	// TODO: don't panic (unless we have a good recovery system)
 	panic(fmt.Sprintf("unhandled types.Object: %T", obj))
 }
 

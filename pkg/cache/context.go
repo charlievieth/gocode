@@ -2,6 +2,9 @@ package cache
 
 import "go/build"
 
+// TODO(cev): we might want to change some things here and
+// to also use faster ReadDir and HasSubdir funcs.
+//
 // PackedContext is a copy of build.Context without the func fields.
 //
 // TODO(mdempsky): Not sure this belongs here.
