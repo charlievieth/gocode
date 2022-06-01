@@ -42,7 +42,8 @@ func contextReadFile(ctxt *build.Context) func(path string) ([]byte, error) {
 	return os.ReadFile
 }
 
-// WARN: not sure this is worth the effort
+// WARN: not sure this is worth the effort since we can't use it
+// and cache files based off of modification time.
 //
 // ContextOpenFile returns a caching OpenFile function suitable for use with a
 // build.Context.

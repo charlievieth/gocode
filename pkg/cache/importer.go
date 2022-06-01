@@ -15,6 +15,8 @@ import (
 	"golang.org/x/tools/go/gcexportdata"
 )
 
+// TODO(charlie): don't use build.Default since
+//
 // We need to mangle go/build.Default to make gcimporter work as
 // intended, so use a lock to protect against concurrent accesses.
 var buildDefaultLock sync.Mutex
@@ -22,6 +24,7 @@ var buildDefaultLock sync.Mutex
 // Mu must be held while using the cache importer.
 var Mu sync.Mutex
 
+// TODO(charlie): use an LRU cache?
 var importCache = importerCache{
 	fset:    token.NewFileSet(),
 	imports: make(map[string]importCacheEntry),
@@ -36,6 +39,8 @@ func NewImporter(ctx *PackedContext, filename string, fallbackToSource bool, log
 		fallbackToSource: fallbackToSource,
 		logf:             logger,
 	}
+	// TODO(charlie): do we need GetGbProjectPaths() and/or should it also
+	// handle go.mod/go.work files and whatnot?
 	gbroot, gbvendor := GetGbProjectPaths(ctx, filename)
 	if gbroot != "" {
 		imp.gbroot, imp.gbvendor = gbroot, gbvendor
@@ -52,13 +57,14 @@ type importer struct {
 }
 
 type importerCache struct {
-	fset    *token.FileSet
+	fset    *token.FileSet // TODO: use per-package token.FileSet
 	imports map[string]importCacheEntry
 }
 
 type importCacheEntry struct {
 	pkg   *types.Package
 	mtime time.Time
+	fset  *token.FileSet // WARN: I don't think we need to persist this
 }
 
 func (i *importer) Import(importPath string) (*types.Package, error) {
@@ -66,6 +72,7 @@ func (i *importer) Import(importPath string) (*types.Package, error) {
 }
 
 func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) (*types.Package, error) {
+	// TODO(charlie): don't lock the entire time and use singleflight
 	buildDefaultLock.Lock()
 	defer buildDefaultLock.Unlock()
 
@@ -85,13 +92,16 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 	def.UseAllFiles = i.ctx.UseAllFiles
 	def.Compiler = i.ctx.Compiler
 	def.BuildTags = i.ctx.BuildTags
+	def.ToolTags = i.ctx.ToolTags
 	def.ReleaseTags = i.ctx.ReleaseTags
 	def.InstallSuffix = i.ctx.InstallSuffix
 	def.SplitPathList = i.splitPathList
 	def.JoinPath = i.joinPath
 
 	i.logf("importing: %v, srcdir: %v", importPath, srcDir)
+	// TODO: use our version of FindPkg
 	filename, path := gcexportdata.Find(importPath, srcDir)
+	// TODO: the cache key should be the filename
 	entry, ok := i.imports[path]
 	if filename == "" {
 		i.logf("no gcexportdata file for %s", path)
@@ -115,7 +125,11 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 			i.logf("failed to fall back to another importer for %s: %v", pkg, err)
 			return nil, err
 		}
-		entry = importCacheEntry{pkg, time.Now()}
+		entry = importCacheEntry{
+			pkg:   pkg,
+			mtime: time.Now(),
+			fset:  nil, // WARN: nil
+		}
 		i.imports[path] = entry
 		return entry.pkg, nil
 	}
@@ -135,11 +149,17 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 		if err != nil {
 			return nil, err
 		}
-		pkg, err := gcexportdata.Read(in, i.fset, make(map[string]*types.Package), path)
+		fset := token.NewFileSet()
+		// pkg, err := gcexportdata.Read(in, i.fset, make(map[string]*types.Package), path)
+		pkg, err := gcexportdata.Read(in, fset, make(map[string]*types.Package), path)
 		if err != nil {
 			return nil, err
 		}
-		entry = importCacheEntry{pkg, fi.ModTime()}
+		entry = importCacheEntry{
+			pkg:   pkg,
+			mtime: fi.ModTime(),
+			fset:  fset, // WARN: nil
+		}
 		i.imports[path] = entry
 	}
 
@@ -230,3 +250,9 @@ func GetGbProjectPaths(ctx *PackedContext, filename string) (string, string) {
 
 	return "", ""
 }
+
+// var iicache sync.Map
+
+// func ImporterForContext(ctxt *build.Context) types.ImporterFrom {
+// 	return nil
+// }
