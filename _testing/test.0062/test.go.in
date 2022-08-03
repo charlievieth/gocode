@@ -1,0 +1,10 @@
+package main
+
+func main() {
+	V
+}
+
+var (
+	Var1 = 1
+	Var2 = 2
+)
