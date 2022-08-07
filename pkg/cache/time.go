@@ -19,6 +19,7 @@ func (u unixTime) Time() time.Time         { return time.Unix(0, int64(u)) }
 func (u unixTime) Equal(t time.Time) bool  { return t.UnixNano() == int64(u) }
 func (u unixTime) Before(t time.Time) bool { return int64(u) < t.UnixNano() }
 func (u unixTime) After(t time.Time) bool  { return int64(u) > t.UnixNano() }
+func (u unixTime) Since() time.Duration    { return time.Duration(time.Now().UnixNano() - int64(u)) }
 func (u unixTime) String() string          { return u.Time().String() }
 
 // atomicUnixTime is an atomic version of unixTime
@@ -43,4 +44,5 @@ func (u *atomicUnixTime) Time() time.Time         { return u.Load().Time() }
 func (u *atomicUnixTime) Equal(t time.Time) bool  { return u.Load().Equal(t) }
 func (u *atomicUnixTime) Before(t time.Time) bool { return u.Load().Before(t) }
 func (u *atomicUnixTime) After(t time.Time) bool  { return u.Load().After(t) }
+func (u *atomicUnixTime) Since() time.Duration    { return u.Load().Since() }
 func (u *atomicUnixTime) String() string          { return u.Load().String() }

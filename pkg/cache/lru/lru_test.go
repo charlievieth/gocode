@@ -18,6 +18,7 @@ package lru
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
 	"sync"
 	"testing"
@@ -48,7 +49,7 @@ var getTests = []struct {
 
 func TestGet(t *testing.T) {
 	for _, tt := range getTests {
-		lru := NewLocking(0)
+		lru := New(0)
 		lru.Add(tt.keyToAdd, 1234)
 		val, ok := lru.Get(tt.keyToGet)
 		if ok != tt.expectedOk {
@@ -60,7 +61,7 @@ func TestGet(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-	lru := NewLocking(0)
+	lru := New(0)
 	lru.Add("myKey", 1234)
 	if val, ok := lru.Get("myKey"); !ok {
 		t.Fatal("TestRemove returned no match")
@@ -75,7 +76,7 @@ func TestRemove(t *testing.T) {
 }
 
 func TestRemoveOldest(t *testing.T) {
-	lru := NewLocking(0)
+	lru := New(0)
 	want := make([]bool, 4)
 	keys := make([]string, 4)
 	for i := 0; i < len(want); i++ {
@@ -102,7 +103,7 @@ func TestRemoveOldest(t *testing.T) {
 }
 
 func TestClear(t *testing.T) {
-	lru := NewLocking(0)
+	lru := New(0)
 	for i := 0; i < 4; i++ {
 		lru.Add(fmt.Sprintf("%d", i), i)
 	}
@@ -121,7 +122,7 @@ func TestEvict(t *testing.T) {
 		evictedKeys = append(evictedKeys, key)
 	}
 
-	lru := NewLocking(20)
+	lru := New(20)
 	lru.OnEvicted = onEvictedFun
 	for i := 0; i < 22; i++ {
 		lru.Add(fmt.Sprintf("myKey%d", i), 1234)
@@ -138,8 +139,29 @@ func TestEvict(t *testing.T) {
 	}
 }
 
+func TestTrim(t *testing.T) {
+	lru := New(8)
+	for i := 0; i < 8; i++ {
+		lru.Add(fmt.Sprintf("key_%d", i), i)
+	}
+	if lru.Len() != 8 {
+		t.Errorf("Len = %d; want %d", lru.Len(), 8)
+	}
+	lru.Trim(4)
+	if lru.Len() != 4 {
+		t.Errorf("Len = %d; want %d", lru.Len(), 4)
+	}
+	for i := 4; i < 8; i++ {
+		key := fmt.Sprintf("key_%d", i)
+		_, ok := lru.Get(key)
+		if !ok {
+			t.Errorf("Get(%q) = %t; want: %t", key, ok, true)
+		}
+	}
+}
+
 func TestRemoveFunc(t *testing.T) {
-	lru := NewLocking(0)
+	lru := New(0)
 	lru.Add("a", 1)
 	lru.Add("b", 2)
 	lru.RemoveFunc(func(key string, val interface{}) bool {
@@ -155,7 +177,7 @@ func TestRemoveFunc(t *testing.T) {
 
 func TestParallelStress(t *testing.T) {
 	const N = 1024
-	lru := NewLocking(1024)
+	lru := New(1024)
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
@@ -180,6 +202,22 @@ func TestParallelStress(t *testing.T) {
 	wg.Wait()
 }
 
+func TestGetOrAdd(t *testing.T) {
+	lru := New(2)
+	lru.Add("a", 1)
+
+	GetOrAdd := func(key string, val, actual interface{}, loaded bool) {
+		got, ok := lru.GetOrAdd(key, val)
+		if !reflect.DeepEqual(got, actual) || ok != loaded {
+			t.Errorf("GetOrAdd(%q, %t) = %v, %t; want: %v, %t", key, val, got, ok, actual, loaded)
+		}
+	}
+	GetOrAdd("a", 2, 1, true)
+	GetOrAdd("b", 2, 2, false)
+	GetOrAdd("c", 3, 3, false)
+	GetOrAdd("a", 2, 2, false)
+}
+
 var benchKeys [256]string
 
 func init() {
@@ -191,22 +229,25 @@ func init() {
 
 func BenchmarkGet(b *testing.B) {
 	keys := &benchKeys
-	c := NewLocking(len(keys))
+	c := New(len(keys))
 	for i := 0; i < len(keys); i++ {
-		c.Add(keys[i%len(keys)], i)
+		c.Add(keys[i], i)
 	}
+	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		c.Get(keys[i%len(keys)])
 	}
 }
 
 func BenchmarkGetParallel(b *testing.B) {
-	b.Skip("DELETE ME")
 	keys := &benchKeys
-	c := NewLocking(len(keys))
+	c := New(len(keys))
 	for i := 0; i < len(keys); i++ {
-		c.Add(keys[i%len(keys)], i)
+		c.Add(keys[i], i)
 	}
+	b.ResetTimer()
+
 	b.RunParallel(func(pb *testing.PB) {
 		for i := 0; pb.Next(); i++ {
 			c.Get(keys[i%len(keys)])
@@ -217,7 +258,7 @@ func BenchmarkGetParallel(b *testing.B) {
 func BenchmarkAdd(b *testing.B) {
 	keys := &benchKeys
 	b.Run("N/1", func(b *testing.B) {
-		c := NewLocking(len(keys))
+		c := New(len(keys))
 		for i := 0; i < b.N; i++ {
 			key := keys[i%len(keys)]
 			c.Add(key, i)
@@ -225,7 +266,7 @@ func BenchmarkAdd(b *testing.B) {
 	})
 
 	b.Run("N/2", func(b *testing.B) {
-		c := NewLocking(len(keys) / 2)
+		c := New(len(keys) / 2)
 		for i := 0; i < b.N; i++ {
 			key := keys[i%len(keys)]
 			c.Add(key, i)
@@ -233,7 +274,7 @@ func BenchmarkAdd(b *testing.B) {
 	})
 
 	b.Run("N/4", func(b *testing.B) {
-		c := NewLocking(len(keys) / 4)
+		c := New(len(keys) / 4)
 		for i := 0; i < b.N; i++ {
 			key := keys[i%len(keys)]
 			c.Add(key, i)
@@ -242,10 +283,9 @@ func BenchmarkAdd(b *testing.B) {
 }
 
 func BenchmarkAddParallel(b *testing.B) {
-	b.Skip("DELETE ME")
 	keys := &benchKeys
 	b.Run("N/1", func(b *testing.B) {
-		c := NewLocking(len(keys))
+		c := New(len(keys))
 		b.RunParallel(func(pb *testing.PB) {
 			for i := 0; pb.Next(); i++ {
 				c.Add(keys[i%len(keys)], i)
@@ -254,7 +294,7 @@ func BenchmarkAddParallel(b *testing.B) {
 	})
 
 	b.Run("N/2", func(b *testing.B) {
-		c := NewLocking(len(keys) / 2)
+		c := New(len(keys) / 2)
 		b.RunParallel(func(pb *testing.PB) {
 			for i := 0; pb.Next(); i++ {
 				c.Add(keys[i%len(keys)], i)
@@ -263,7 +303,7 @@ func BenchmarkAddParallel(b *testing.B) {
 	})
 
 	b.Run("N/4", func(b *testing.B) {
-		c := NewLocking(len(keys) / 4)
+		c := New(len(keys) / 4)
 		b.RunParallel(func(pb *testing.PB) {
 			for i := 0; pb.Next(); i++ {
 				c.Add(keys[i%len(keys)], i)

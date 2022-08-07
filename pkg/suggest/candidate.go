@@ -46,6 +46,38 @@ func (s candidatesByClassAndName) Less(i, j int) bool {
 	return s[i].Name < s[j].Name
 }
 
+// TODO: use this
+// func objectFiltersFunc(typ string) objectFilter {
+// 	switch typ {
+// 	case "const":
+// 		return func(obj types.Object) bool {
+// 			_, ok := obj.(*types.Const)
+// 			return ok
+// 		}
+// 	case "func":
+// 		return func(obj types.Object) bool {
+// 			_, ok := obj.(*types.Func)
+// 			return ok
+// 		}
+// 	case "package":
+// 		return func(obj types.Object) bool {
+// 			_, ok := obj.(*types.PkgName)
+// 			return ok
+// 		}
+// 	case "type":
+// 		return func(obj types.Object) bool {
+// 			_, ok := obj.(*types.TypeName)
+// 			return ok
+// 		}
+// 	case "var":
+// 		return func(obj types.Object) bool {
+// 			_, ok := obj.(*types.Var)
+// 			return ok
+// 		}
+// 	}
+// 	return nil
+// }
+
 type objectFilter func(types.Object) bool
 
 var objectFilters = map[string]objectFilter{
@@ -57,6 +89,7 @@ var objectFilters = map[string]objectFilter{
 }
 
 func classifyObject(obj types.Object) string {
+	// TODO: missing types.Label
 	switch obj.(type) {
 	case *types.Builtin:
 		return "func"
@@ -94,9 +127,9 @@ func (b *candidateCollector) getCandidates() []Candidate {
 		objs = b.badcase
 	}
 
-	var res []Candidate
-	for _, obj := range objs {
-		res = append(res, b.asCandidate(obj))
+	res := make([]Candidate, len(objs))
+	for i, obj := range objs {
+		res[i] = b.asCandidate(obj)
 	}
 	sort.Sort(candidatesByClassAndName(res))
 	return res
@@ -120,6 +153,7 @@ func (b *candidateCollector) asCandidate(obj types.Object) Candidate {
 		typStr = "struct"
 	default:
 		if _, isBuiltin := obj.(*types.Builtin); isBuiltin {
+			// TODO: warn if missing from the builtinTypes map
 			typStr = builtinTypes[obj.Name()]
 		} else if t != nil {
 			typStr = types.TypeString(t, b.qualify)
@@ -174,6 +208,11 @@ func (b *candidateCollector) qualify(pkg *types.Package) string {
 	return pkg.Name()
 }
 
+func hasPrefixCase(s, prefix string) bool {
+	return len(s) >= len(prefix) &&
+		(s[0:len(prefix)] == prefix || strings.EqualFold(s[0:len(prefix)], prefix))
+}
+
 func (b *candidateCollector) appendObject(obj types.Object) {
 	if obj.Pkg() != b.localpkg {
 		if obj.Parent() == types.Universe {
@@ -191,7 +230,7 @@ func (b *candidateCollector) appendObject(obj types.Object) {
 	}
 	if !b.ignoreCase && (b.filter != nil || strings.HasPrefix(obj.Name(), b.partial)) {
 		b.exact = append(b.exact, obj)
-	} else if strings.HasPrefix(strings.ToLower(obj.Name()), strings.ToLower(b.partial)) {
+	} else if hasPrefixCase(obj.Name(), b.partial) {
 		b.badcase = append(b.badcase, obj)
 	}
 }

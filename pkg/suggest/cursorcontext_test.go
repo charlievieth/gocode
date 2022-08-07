@@ -44,7 +44,8 @@ func BenchmarkNewTokenIterator(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		newTokenIterator(data, cursor)
+		iter, _ := newTokenIterator(data, cursor)
+		putTokenIterator(iter)
 	}
 
 	// it, n := newTokenIterator(data, cursor)

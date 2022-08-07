@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/charlievieth/buildutil"
@@ -99,8 +98,9 @@ var defaultFileCache = new(fileCache)
 
 type fileCache struct {
 	mu          sync.Mutex
-	cache       *lru.LockingCache
+	files       *lru.Cache
 	fset        *token.FileSet
+	matches     *MatchCache
 	initialized bool
 	MaxEntries  int
 }
@@ -125,36 +125,15 @@ func (c *fileCache) initialize() {
 	if c.MaxEntries < 0 {
 		c.MaxEntries = 0 // unlimited - not recommended
 	}
-	c.cache = lru.NewLocking(c.MaxEntries)
+	c.files = lru.New(c.MaxEntries)
 	c.fset = token.NewFileSet()
 }
 
 func (c *fileCache) get(filename string) (*fileCacheEntry, bool) {
-	if v, ok := c.cache.Get(filename); ok {
+	if v, ok := c.files.Get(filename); ok {
 		return v.(*fileCacheEntry), true
 	}
 	return nil, false
-}
-
-func filterDirEntries(ctxt *build.Context, des []fs.DirEntry, filter func(fs.DirEntry) bool) []fs.DirEntry {
-	if len(des) == 0 {
-		return des
-	}
-	a := des[:0]
-	for _, d := range des {
-		name := d.Name()
-		if d.IsDir() || !strings.HasSuffix(name, ".go") {
-			continue
-		}
-		if filter != nil && !filter(d) {
-			continue
-		}
-		if !buildutil.GoodOSArchFile(ctxt, name, nil) {
-			continue
-		}
-		a = append(a, d)
-	}
-	return a
 }
 
 func (c *fileCache) ParseDir(ctxt *build.Context, fset *token.FileSet,
@@ -201,7 +180,7 @@ func (c *fileCache) Parser(ctxt *build.Context) *Parser {
 	}
 	p := &Parser{
 		ctxt:  ctxt,
-		cache: c.cache,
+		cache: c.files,
 		fset:  c.fset,
 	}
 	c.mu.Unlock()
@@ -219,7 +198,7 @@ func LoadParser(ctxt *build.Context) *Parser {
 
 type Parser struct {
 	ctxt  *build.Context
-	cache *lru.LockingCache
+	cache *lru.Cache
 	fset  *token.FileSet
 }
 

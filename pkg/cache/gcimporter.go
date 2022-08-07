@@ -4,11 +4,16 @@ import (
 	"fmt"
 	"go/build"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"golang.org/x/tools/go/buildutil"
 )
+
+// TODO:
+//	1. fix versioned packages
+//	2. use "golang.org/x/tools/go/packages" to find the build artifacts (slow)
 
 // FindPkg is the same as golang.org/x/tools/go/gcexportdata.FindPkg
 // but uses the provided build.Context instead of build.Default.
@@ -21,6 +26,8 @@ import (
 //
 //
 func FindPkg(ctxt *build.Context, path, srcDir string) (filename, id string) {
+	// Example:
+	// 	FindPkg("fmt", "$PWD") = "$GOROOT/pkg/darwin_arm64/fmt.a", "fmt"
 	if path == "" {
 		return
 	}
@@ -87,3 +94,50 @@ func isFile(ctxt *build.Context, name string) bool {
 	fi, err := os.Stat(name)
 	return err == nil && !fi.IsDir()
 }
+
+func isVersion(s string) bool {
+	if len(s) < len("v2") || s[0] != 'v' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// removeImportPathVersion removes the version ("v2"), if any, from import path s
+// and returns the un-versioned import path and if a version was found.
+//
+// This handles the problem of packages like "foo/bar/v2" being exported as
+// "foo/bar.a".
+func removeImportPathVersion(s string) (string, bool) {
+	if !strings.Contains(s, "/v") {
+		return s, false
+	}
+	if dir, base := path.Split(s); isVersion(base) {
+		return strings.TrimSuffix(dir, "/"), true
+	}
+	a := strings.Split(s, "/")
+	for i := len(a) - 1; i > 0; i-- {
+		if isVersion(a[i]) {
+			return strings.Join(append(a[:i], a[i+1:]...), "/"), true
+		}
+	}
+	return s, false
+}
+
+// func FindPkg(ctxt *build.Context, path, srcDir string) (filename, id string) {
+// 	filename, id = findPkg(ctxt, path, srcDir)
+// 	if filename != "" {
+// 		return
+// 	}
+// 	if p, ok := fixVersionedPkgName(path); ok {
+// 		if filename, id := findPkg(ctxt, p, srcDir); filename != "" {
+// 			return filename, id
+// 		}
+// 	}
+// 	return filename, id
+// }

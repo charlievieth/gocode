@@ -2,7 +2,6 @@ package cache
 
 import (
 	"go/build"
-	"sort"
 	"sync"
 	"unsafe"
 )
@@ -52,6 +51,16 @@ func stringsAreSorted(a []string) bool {
 	return true
 }
 
+// Use insertion sort since the slices we're sorting are small
+// and it saves us an alloc from the sort.Interface conversion.
+func insertionSortStrings(a []string) {
+	for i := 1; i < len(a); i++ {
+		for j := i; j > 0 && a[j] < a[j-1]; j-- {
+			a[j], a[j-1] = a[j-1], a[j]
+		}
+	}
+}
+
 func appendStrings(b []byte, scratch, a []string) ([]byte, []string) {
 	if len(a) == 0 {
 		return b, scratch
@@ -59,7 +68,7 @@ func appendStrings(b []byte, scratch, a []string) ([]byte, []string) {
 	if !stringsAreSorted(a) {
 		scratch = append(scratch[:0], a...)
 		a = scratch
-		sort.Strings(a)
+		insertionSortStrings(a)
 	}
 	b = append(b, a[0]...)
 	for i := 1; i < len(a); i++ {
@@ -133,16 +142,17 @@ type ContextKeyID uint32
 // created with ContextCacheKey.
 func ContextCacheKeyID(ctxtKey string) ContextKeyID {
 	contextIDs.RLock()
-	if id, ok := contextIDs.ids[ctxtKey]; ok {
+	id, ok := contextIDs.ids[ctxtKey]
+	contextIDs.RUnlock()
+	if ok {
 		return id
 	}
-	contextIDs.RUnlock()
 
 	contextIDs.Lock()
 	if contextIDs.ids == nil {
 		contextIDs.ids = make(map[string]ContextKeyID)
 	}
-	id, ok := contextIDs.ids[ctxtKey]
+	id, ok = contextIDs.ids[ctxtKey]
 	if !ok {
 		id = ContextKeyID(len(contextIDs.ids)) + 1
 		contextIDs.ids[ctxtKey] = id

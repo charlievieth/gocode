@@ -43,6 +43,18 @@ func TestContextCacheKey(t *testing.T) {
 	}
 }
 
+func TestContextCacheKeyDirIgnored(t *testing.T) {
+	ctxt1 := build.Default
+	ctxt2 := build.Default
+	ctxt1.Dir = "/go1"
+	ctxt2.Dir = "/go2"
+	k1 := ContextCacheKey(&ctxt1)
+	k2 := ContextCacheKey(&ctxt2)
+	if k1 != k2 {
+		t.Errorf("ContextCacheKey should ignore the Context.Dir field: %q vs. %q", k1, k2)
+	}
+}
+
 func BenchmarkContextCacheKey(b *testing.B) {
 	b.Run("Default", func(b *testing.B) {
 		ctxt := &build.Default

@@ -1,9 +1,10 @@
 package suggest
 
 import (
-	"bytes"
 	"go/scanner"
 	"go/token"
+	"strings"
+	"sync"
 )
 
 type tokenIterator struct {
@@ -23,14 +24,27 @@ func (i tokenItem) String() string {
 	return i.tok.String()
 }
 
-func newTokenIterator(src []byte, cursor int) (tokenIterator, int) {
+var tokenIterPool = sync.Pool{
+	New: func() interface{} {
+		return &tokenIterator{tokens: make([]tokenItem, 0, 1024)}
+	},
+}
+
+func putTokenIterator(iter *tokenIterator) {
+	iter.tokens = iter.tokens[:0]
+	tokenIterPool.Put(iter)
+}
+
+func newTokenIterator(src []byte, cursor int) (*tokenIterator, int) {
 	fset := token.NewFileSet()
 	file := fset.AddFile("", fset.Base(), len(src))
 	cursorPos := file.Pos(cursor)
 
 	var s scanner.Scanner
 	s.Init(file, src, nil, scanner.ScanComments)
-	tokens := make([]tokenItem, 0, 1000)
+
+	iter := tokenIterPool.Get().(*tokenIterator)
+	tokens := iter.tokens[:0]
 	lastPos := token.NoPos
 	for {
 		pos, tok, lit := s.Scan()
@@ -43,10 +57,11 @@ func newTokenIterator(src []byte, cursor int) (tokenIterator, int) {
 		})
 		lastPos = pos
 	}
-	return tokenIterator{
+	*iter = tokenIterator{
 		tokens: tokens,
 		pos:    len(tokens) - 1,
-	}, int(cursorPos - lastPos)
+	}
+	return iter, int(cursorPos - lastPos)
 }
 
 func (ti *tokenIterator) token() tokenItem {
@@ -256,14 +271,16 @@ loop:
 // Given a slice of token_item, reassembles them into the original literal
 // expression.
 func joinTokens(tokens []tokenItem) string {
-	var buf bytes.Buffer
-	for i, tok := range tokens {
-		if i > 0 {
-			buf.WriteByte(' ')
-		}
-		buf.WriteString(tok.String())
+	if len(tokens) == 0 {
+		return ""
 	}
-	return buf.String()
+	var w strings.Builder
+	w.WriteString(tokens[0].String())
+	for _, tok := range tokens[1:] {
+		w.WriteByte(' ')
+		w.WriteString(tok.String())
+	}
+	return w.String()
 }
 
 type cursorContext int
@@ -275,8 +292,10 @@ const (
 	compositeLiteralContext
 )
 
+// TODO: this needs work
 func deduceCursorContext(file []byte, cursor int) (cursorContext, string, string) {
 	iter, off := newTokenIterator(file, cursor)
+	defer putTokenIterator(iter)
 	if len(iter.tokens) == 0 {
 		return unknownContext, "", ""
 	}

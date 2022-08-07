@@ -2,44 +2,47 @@ package cache
 
 import (
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
+	"github.com/charlievieth/buildutil"
 	"github.com/mdempsky/gocode/pkg/cache/lru"
 )
 
 const (
-	DefaultAstCacheSize    = 500
-	DefaultSourceCacheSize = 32
-	DefaultFileSetMaxSize  = 1e9
+	// TODO: can we measure memory usage for the stored AST instead of
+	// using a fixed number?
+	//
+	// NOTE: It takes about 100MB to store the trimmed ast of the 1,702
+	// Go source files in the go1.18 standard library.
+	DefaultAstCacheSize   = 4096
+	DefaultFileSetMaxSize = 1e9
 )
 
 // TODO: use an unsafe.Pointer
 var defaultAstCache atomic.Value
 
 func init() {
-	defaultAstCache.Store(new(AstCache))
+	defaultAstCache.Store(&AstCache{
+		Size:        DefaultAstCacheSize,
+		FileSetSize: DefaultFileSetMaxSize,
+	})
 }
 
 type astCacheEntry struct {
-	file *ast.File
-	err  error
-	// TODO: consider using access time instead
-	ctime unixTime       // entry created at
+	file  *ast.File
+	err   error
 	mtime atomicUnixTime // file modified at
 	size  int64
 	hash  uint64
-}
-
-type sourceCacheEntry struct {
-	file *ast.File
-	mode parser.Mode
-	err  error
 }
 
 // TODO: don't export this and instead export a Parser type
@@ -48,23 +51,31 @@ type sourceCacheEntry struct {
 // respected. We can't enforce them while parsing because for a large directory
 // we might remove files that we need.
 type AstCache struct {
-	mu          sync.Mutex
-	initialized bool
-	cache       map[string]*astCacheEntry
-	sourceCache *lru.LockingCache
+	once        sync.Once
+	cache       *lru.Cache
 	fset        *token.FileSet
+	Match       *MatchCache
 	Size        int // Max number of *ast.Files (<0 disables this)
-	SourceSize  int // Max number of *ast.Files parsed from source
 	FileSetSize int // Max size of the *token.FileSet (<0 disables this)
+
+	// Logf func(format string, v ...interface{}) // Optional logger
 }
 
-// copy returns an empy copy of the AstCache
+// func (c *AstCache) logf(format string, v ...interface{}) {
+// 	if c.Logf != nil {
+// 		c.Logf(format, v...)
+// 	}
+// }
+
+// copy returns an empty copy of the AstCache, but preserves the MatchCache
 func (c *AstCache) copy() *AstCache {
-	return &AstCache{
+	dupe := &AstCache{
+		Match:       c.Match,
 		Size:        c.Size,
-		SourceSize:  c.SourceSize,
 		FileSetSize: c.FileSetSize,
 	}
+	dupe.once.Do(dupe.initialize)
+	return dupe
 }
 
 func SetDefaultAstCacheLimits(size, fileSetSize int) {
@@ -78,10 +89,14 @@ func SetDefaultAstCacheLimits(size, fileSetSize int) {
 func LoadAstCache() *AstCache {
 	c, ok := defaultAstCache.Load().(*AstCache)
 	if !ok || c == nil {
+		c = &AstCache{
+			Size:        DefaultAstCacheSize,
+			FileSetSize: DefaultFileSetMaxSize,
+		}
+		c.once.Do(c.initialize)
 		// We create a new cache on init so we can ignore
 		// the race here
-		n := new(AstCache)
-		defaultAstCache.Store(n)
+		defaultAstCache.Store(c)
 	}
 
 	// If the FileSet size limit is exceeded create and return a new AstCache.
@@ -95,92 +110,51 @@ func LoadAstCache() *AstCache {
 		defaultAstCache.Store(c)
 	}
 
-	// TODO(charlie): use a heap or something to remove the oldest entries first
-	//
-	// Delete random files to keep the cache from growing too large
-	c.mu.Lock()
-	if len(c.cache) > c.Size {
-		for k := range c.cache {
-			if len(c.cache) <= c.Size {
-				break
-			}
-			delete(c.cache, k)
-		}
-	}
-	c.mu.Unlock()
+	c.cache.Trim(c.Size)
 
 	return c
 }
 
 func (c *AstCache) initialize() {
-	if c.initialized {
-		return
-	}
 	if c.Size == 0 {
 		c.Size = DefaultAstCacheSize
-	}
-	if c.SourceSize == 0 {
-		c.SourceSize = DefaultSourceCacheSize
-	}
-	if c.SourceSize < 0 {
-		c.SourceSize = 0 // unlimited
 	}
 	if c.FileSetSize == 0 {
 		c.FileSetSize = DefaultFileSetMaxSize
 	}
-	c.cache = make(map[string]*astCacheEntry)
+	if c.Match == nil {
+		c.Match = LoadMatchCache() // Use defaults
+	}
+	c.cache = lru.New(0) // Unlimited, we trim it in LoadAstCache
 	c.fset = token.NewFileSet()
-	c.sourceCache = lru.NewLocking(c.SourceSize)
-	c.initialized = true
 }
 
 func (c *AstCache) FileSet() *token.FileSet {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.initialized {
-		c.initialize()
-	}
+	c.once.Do(c.initialize)
 	return c.fset
 }
 
 func (c *AstCache) delete(filename string) {
-	c.mu.Lock()
-	if c.cache != nil {
-		delete(c.cache, filename)
-	}
-	c.mu.Unlock()
+	c.cache.Remove(filename)
 }
 
-func (c *AstCache) ParseSource(filename string, data []byte, mode parser.Mode) (*ast.File, error) {
-	fset := c.FileSet() // this initializes the AstCache
-	if v, ok := c.sourceCache.GetB(data); ok {
-		if ent, _ := v.(*sourceCacheEntry); ent != nil && ent.mode&mode == mode {
-			return ent.file, ent.err
-		}
+func (c *AstCache) get(filename string) (*astCacheEntry, bool) {
+	if v, ok := c.cache.Get(filename); ok {
+		return v.(*astCacheEntry), true
 	}
-	af, err := parser.ParseFile(fset, filename, data, mode)
-	c.sourceCache.Add(string(data), &sourceCacheEntry{
-		file: af,
-		err:  err,
-		mode: mode,
-	})
-	return af, err
+	return nil, false
 }
 
 func (c *AstCache) ParsePackageFile(filename string) (*ast.File, error) {
-	c.mu.Lock()
-	if !c.initialized {
-		c.initialize()
-	}
-	ent, ok := c.cache[filename]
-	c.mu.Unlock()
-
+	c.once.Do(c.initialize)
+	ent, ok := c.get(filename)
 	if ok {
 		if fi, err := os.Stat(filename); err == nil {
 			if fi.Size() == ent.size {
 				if ent.mtime.Equal(fi.ModTime()) {
 					return ent.file, ent.err
 				}
+				// WARN: if the file changed we hash it twice
 				if hash, _ := hashFile(filename); hash == ent.hash {
 					// Update ModTime since the file content did not change
 					ent.mtime.Set(fi.ModTime())
@@ -191,7 +165,7 @@ func (c *AstCache) ParsePackageFile(filename string) (*ast.File, error) {
 	}
 
 	data, fi, err := readFile(filename)
-	if err != nil {
+	if err != nil && ok {
 		c.delete(filename)
 		return nil, err
 	}
@@ -209,27 +183,72 @@ func (c *AstCache) ParsePackageFile(filename string) (*ast.File, error) {
 		trimAST(af, token.NoPos)
 	}
 
-	c.mu.Lock()
 	// WARN(charlie): there is a race here since we don't re-check the condition
-	c.cache[filename] = &astCacheEntry{
+	c.cache.Add(filename, &astCacheEntry{
 		file:  af,
 		err:   err,
-		ctime: newUnixTime(time.Now()),
 		mtime: newAtomicUnixTime(fi.ModTime()),
 		size:  fi.Size(),
 		hash:  hash,
-	}
-	c.mu.Unlock()
+	})
 	return af, err
 }
 
+func (c *AstCache) parsePackageFileInfo(filename string, info fs.FileInfo) (*ast.File, error) {
+	c.once.Do(c.initialize)
+
+	ent, ok := c.get(filename)
+	if ok && info != nil && ent.mtime.Equal(info.ModTime()) {
+		return ent.file, ent.err
+	}
+
+	buf, fi, err := readFileBuffer(filename)
+	if err != nil {
+		if ok {
+			c.delete(filename)
+		}
+		return nil, err
+	}
+	defer putReadBuffer(buf)
+	hash := hashData(buf.Bytes())
+
+	// Check if only modtime changed
+	if ok && ent.size == fi.Size() && ent.hash == hash {
+		// Update modtime
+		ent.mtime.Set(fi.ModTime())
+		return ent.file, ent.err
+	}
+
+	af, err := parser.ParseFile(c.fset, filename, buf, 0)
+	if af != nil {
+		trimAST(af, token.NoPos)
+	}
+
+	// WARN(charlie): there is a race here since we don't re-check the condition
+	c.cache.Add(filename, &astCacheEntry{
+		file:  af,
+		err:   err,
+		mtime: newAtomicUnixTime(fi.ModTime()),
+		size:  fi.Size(),
+		hash:  hash,
+	})
+	return af, err
+}
+
+// TODO: tune this so that each worker has at least N items of work
+// where N > 1.
 func numWorkers(nitems int) int {
+	if nitems <= 1 {
+		return 1
+	}
 	n := runtime.NumCPU()
-	if n < nitems {
+	if nitems < n {
 		n = nitems
 	}
 	if runtime.GOOS == "darwin" && n > 8 {
 		n = 8
+	} else if n <= 1 {
+		n = 1
 	}
 	return n
 }
@@ -283,6 +302,218 @@ func (c *AstCache) ParsePackageFiles(filenames []string) ([]*ast.File, error) {
 	}
 }
 
+func FilterForFile(filename string) func(base string) bool {
+	// NOTE: filterDirEntries() checks the file type and GoodOsArchFile()
+	base := filepath.Base(filename)
+	includeTest := strings.HasSuffix(base, "_test.go")
+	return func(name string) bool {
+		return name != base && (includeTest || !strings.HasSuffix(name, "_test.go"))
+	}
+}
+
+// WARN: remove!
+func filterDirEntries(ctxt *build.Context, des []fs.DirEntry, filter func(fs.DirEntry) bool) []fs.DirEntry {
+	if len(des) == 0 {
+		return des
+	}
+	a := des[:0]
+	for _, d := range des {
+		name := d.Name()
+		if d.IsDir() || !strings.HasSuffix(name, ".go") {
+			continue
+		}
+		if filter != nil && !filter(d) {
+			continue
+		}
+		if !buildutil.GoodOSArchFile(ctxt, name, nil) {
+			continue
+		}
+		a = append(a, d)
+	}
+	return a
+}
+
+func removeNilFiles(files []*ast.File) []*ast.File {
+	if len(files) == 0 {
+		return nil
+	}
+	var i int
+	for i = 0; i < len(files) && files[i] != nil; i++ {
+	}
+	if i >= len(files) {
+		return files
+	}
+
+	a := files[:i]
+	for ; i < len(files); i++ {
+		if af := files[i]; af != nil {
+			a = append(a, af)
+		}
+	}
+	if len(a) == 0 {
+		return nil
+	}
+	return a
+}
+
+func filterFiles(ctxt *build.Context, names []string, filter func(name string) bool) []string {
+	if len(names) == 0 {
+		return names
+	}
+	a := names[:0]
+	for _, name := range names {
+		if !strings.HasSuffix(name, ".go") {
+			continue
+		}
+		if filter != nil && !filter(name) {
+			continue
+		}
+		if !buildutil.GoodOSArchFile(ctxt, name, nil) {
+			continue
+		}
+		a = append(a, name)
+	}
+	return a
+}
+
+func (c *AstCache) ParsePackage(ctxt *build.Context, dirname, pkgName string,
+	filter func(name string) bool) ([]*ast.File, error) {
+
+	names, err := readGoNames(dirname, true)
+	if err != nil {
+		return nil, NewMultiError(err)
+	}
+	names = filterFiles(ctxt, names, filter)
+	if len(names) == 0 {
+		return nil, nil // WARN: nil nil ??
+	}
+
+	// Make sure the dirname is clean since it is used as a cache key
+	dirname = filepath.Clean(dirname)
+
+	files := make([]*ast.File, len(names), len(names)+1) // Add 1 for the current file
+	delta := len(names) / numWorkers(len(names))
+	if delta == 0 {
+		delta = 1
+	}
+
+	c.once.Do(c.initialize)
+	m := c.Match
+
+	var wg sync.WaitGroup
+	var multiErr MultiErrorBuilder
+	for i := 0; i < len(names); i += delta {
+		j := i + delta
+		if j >= len(names) {
+			j = len(names)
+		}
+		wg.Add(1)
+		// TODO: log all errors
+		go func(names []string, files []*ast.File, merr *MultiErrorBuilder) {
+			defer wg.Done()
+			for i, name := range names {
+				path := dirname + string(filepath.Separator) + name
+				fi, err := os.Stat(path)
+				if err != nil {
+					if !os.IsNotExist(err) {
+						merr.Add(err)
+					}
+					continue
+				}
+				if fi.IsDir() {
+					continue
+				}
+				pkg, match, err := m.MatchFileInfo(ctxt, dirname, fi)
+				if err != nil {
+					merr.Add(err)
+					continue
+				}
+				if !match || pkg != pkgName {
+					continue
+				}
+				af, err := c.parsePackageFileInfo(path, fi)
+				if err != nil {
+					merr.Add(err) // don't continue here (allow for invalid source)
+				}
+				files[i] = af
+			}
+		}(names[i:j], files[i:j], &multiErr)
+	}
+	wg.Wait()
+
+	return removeNilFiles(files), multiErr.ToError()
+}
+
+// ParsePackage parses all of Go source files dirname that have package name
+// pkgName, are matched by build.Context ctxt, and are not excluded by the
+// filter. Any returned error will be of type MultiError.
+func (c *AstCache) ParsePackage_OLD(ctxt *build.Context, dirname, pkgName string,
+	filter func(fs.DirEntry) bool) ([]*ast.File, error) {
+
+	des, err := os.ReadDir(dirname)
+	if err != nil {
+		return nil, NewMultiError(err)
+	}
+
+	des = filterDirEntries(ctxt, des, filter)
+	if len(des) == 0 {
+		return nil, nil // WARN: nil nil ??
+	}
+
+	// Make sure the dirname is clean since it is used as a cache key
+	dirname = filepath.Clean(dirname)
+
+	files := make([]*ast.File, len(des), len(des)+1) // Add 1 for the current file
+	delta := len(des) / numWorkers(len(des))
+	if delta == 0 {
+		delta = 1
+	}
+
+	c.once.Do(c.initialize)
+	m := c.Match
+
+	var wg sync.WaitGroup
+	var multiErr MultiErrorBuilder
+	for i := 0; i < len(des); i += delta {
+		j := i + delta
+		if j >= len(des) {
+			j = len(des)
+		}
+		wg.Add(1)
+		// TODO: log all errors
+		go func(des []fs.DirEntry, files []*ast.File, merr *MultiErrorBuilder) {
+			defer wg.Done()
+			for i, d := range des {
+				fi, err := d.Info()
+				if err != nil {
+					if !os.IsNotExist(err) {
+						merr.Add(err)
+					}
+					continue
+				}
+				pkg, match, err := m.MatchFileInfo(ctxt, dirname, fi)
+				if err != nil {
+					merr.Add(err)
+					continue
+				}
+				if !match || pkg != pkgName {
+					continue
+				}
+				path := dirname + string(os.PathSeparator) + d.Name()
+				af, err := c.parsePackageFileInfo(path, fi)
+				if err != nil {
+					merr.Add(err)
+					continue
+				}
+				files[i] = af
+			}
+		}(des[i:j], files[i:j], &multiErr)
+	}
+	wg.Wait()
+
+	return removeNilFiles(files), multiErr.ToError()
+}
+
 // TODO(charlie): move this to a shared location
 //
 // trimAST clears any part of the AST not relevant to type checking
@@ -324,168 +555,3 @@ func isEllipsisArray(n ast.Expr) bool {
 	_, ok = at.Len.(*ast.Ellipsis)
 	return ok
 }
-
-/*
-type FileCache struct {
-	mu      sync.Mutex
-	cache   map[string]*FileCacheEntry
-	MaxSize int
-	New     func(filename string) (interface{}, error)
-
-	// TODO: do we want this?
-	// SingleFlight bool
-}
-
-// func (c *FileCache) doLoad(filename string) (*FileCacheEntry, bool) {
-// 	c.mu.Lock()
-// 	return nil, nil
-// }
-
-func (c *FileCache) storeError(filename string, err error) {
-}
-
-func (c *FileCache) swap(filename string, old, new *FileCacheEntry) bool {
-	return true
-}
-
-func (c *FileCache) Load(filename string) (*FileCacheEntry, error) {
-	c.mu.Lock()
-	ent, ok := c.cache[filename]
-	c.mu.Unlock()
-	if ok {
-		fi, err := os.Stat(filename)
-		if err != nil {
-			// Remove
-		}
-		if ent.ModTime().Equal(fi.ModTime()) {
-			return ent, nil
-		}
-	}
-	// TODO: stat the file after opening to avoid a race condition
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		// Remove
-	}
-	_ = data
-
-	// hash := hashData(data)
-	// if ent.Size() {
-	// }
-	return nil, nil
-}
-
-type atomicTime struct {
-	time *time.Time
-}
-
-func (a *atomicTime) Store(t time.Time) {
-	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&a.time)),
-		(unsafe.Pointer)(unsafe.Pointer(&t)))
-}
-
-func (a *atomicTime) load() *time.Time {
-	return (*time.Time)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&a.time))))
-}
-
-func (a *atomicTime) Load() (time.Time, bool) {
-	if t := a.load(); t != nil {
-		return *t, true
-	}
-	return time.Time{}, false
-}
-
-func (a *atomicTime) Time() time.Time {
-	t, _ := a.Load()
-	return t
-}
-
-func (a *atomicTime) String() string {
-	if t := a.load(); t != nil {
-		return t.String()
-	}
-	return "<nil>"
-}
-
-type FileCacheEntry struct {
-	path    string
-	modTime atomicTime
-	size    int64
-	hash    uint64
-	value   interface{}
-	err     error
-}
-
-func (e *FileCacheEntry) CheckValid() (bool, error) {
-	if e == nil {
-		return false, nil
-	}
-
-	// TODO: do we want to return the Entry's error?
-	// if e.Error() != nil {
-	// 	return false, e.Error()
-	// }
-
-	fi, err := os.Stat(e.Path())
-	if err != nil {
-		return false, err
-	}
-	if fi.ModTime().Equal(e.ModTime()) && fi.Size() == e.Size() {
-		return true, nil
-	}
-	// Check if only the modtime changed
-	if fi.Size() == e.Size() {
-		hash, err := hashFile(e.Path())
-		if err != nil {
-			return false, err
-		}
-		if hash == e.Hash() {
-			// Update modtime: file content did not change
-			e.modTime.Store(fi.ModTime())
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func (e *FileCacheEntry) Path() string {
-	if e != nil {
-		return e.path
-	}
-	return ""
-}
-
-func (e *FileCacheEntry) ModTime() time.Time {
-	if e != nil {
-		return e.modTime.Time()
-	}
-	return time.Time{}
-}
-
-func (e *FileCacheEntry) Size() int64 {
-	if e != nil {
-		return e.size
-	}
-	return 0
-}
-
-func (e *FileCacheEntry) Hash() uint64 {
-	if e != nil {
-		return e.hash
-	}
-	return 0
-}
-
-func (e *FileCacheEntry) Value() interface{} {
-	if e != nil {
-		return e.value
-	}
-	return nil
-}
-
-func (e *FileCacheEntry) Error() error {
-	if e != nil {
-		return e.err
-	}
-	return nil
-}
-*/
