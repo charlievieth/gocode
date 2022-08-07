@@ -696,6 +696,7 @@ func (m *iimporter) importBinary(importPath, pkgFile, resolvedPkgPath string) (*
 			// files themselves can be large so avoid constantly rehashing them
 			// if the size does not change.
 			if ent.mtime.Equal(fi.ModTime()) || time.Since(ent.htime.Time()) <= ArchiveFileTTL {
+				m.logf("cache: using cached gcexportdata file (TTL): %s", pkgFile)
 				return ent.pkg, nil
 			}
 		}
@@ -709,6 +710,7 @@ func (m *iimporter) importBinary(importPath, pkgFile, resolvedPkgPath string) (*
 	if ent != nil && ent.size == fi.Size() && ent.buildID == id {
 		ent.mtime.Set(fi.ModTime())
 		ent.htime.Set(time.Now())
+		m.logf("cache: using cached gcexportdata file (same build id): %s", pkgFile)
 		return ent.pkg, nil
 	}
 
@@ -733,6 +735,7 @@ func (m *iimporter) importBinary(importPath, pkgFile, resolvedPkgPath string) (*
 	}
 
 	// TODO: use the archive file as the cache key ???
+	m.logf("cache: caching gcexportdata file: %s", pkgFile)
 	m.addPkg(pkgFile, resolvedPkgPath, &importCacheEntry{
 		pkg:        pkg,
 		importPath: importPath,
@@ -749,9 +752,11 @@ func (m *iimporter) importBinary(importPath, pkgFile, resolvedPkgPath string) (*
 func (m *iimporter) importSource(importPath, srcDir, resolvedImportPath string) (*types.Package, error) {
 	if ent, ok := m.ii.getSrc(m.ContextCacheKey(), resolvedImportPath); ok {
 		if time.Since(ent.utime.Time()) < time.Minute {
+			m.logf("cache: using cached source package (TTL): %q => %q", importPath, resolvedImportPath)
 			return ent.pkg, nil
 		}
 		if ent.updateHash() {
+			m.logf("cache: using cached source package (hash): %q => %q", importPath, resolvedImportPath)
 			return ent.pkg, nil
 		}
 		m.ii.removeSrc(m.ContextCacheKey(), resolvedImportPath)
@@ -780,6 +785,7 @@ func (m *iimporter) importSource(importPath, srcDir, resolvedImportPath string) 
 		return nil, err
 	}
 
+	m.logf("cache: caching source package: %q => %q", importPath, resolvedImportPath)
 	m.ii.addSrc(m.ContextCacheKey(), resolvedImportPath, &sourceImportCacheEntry{
 		pkg:        pkg,
 		importPath: importPath,
