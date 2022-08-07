@@ -1,23 +1,26 @@
-Found 25 candidates:
-  func Errorf(format string, a ...interface{}) error
-  func Fprint(w banana.Writer, a ...interface{}) (n int, err error)
-  func Fprintf(w banana.Writer, format string, a ...interface{}) (n int, err error)
-  func Fprintln(w banana.Writer, a ...interface{}) (n int, err error)
-  func Fscan(r banana.Reader, a ...interface{}) (n int, err error)
-  func Fscanf(r banana.Reader, format string, a ...interface{}) (n int, err error)
-  func Fscanln(r banana.Reader, a ...interface{}) (n int, err error)
-  func Print(a ...interface{}) (n int, err error)
-  func Printf(format string, a ...interface{}) (n int, err error)
-  func Println(a ...interface{}) (n int, err error)
-  func Scan(a ...interface{}) (n int, err error)
-  func Scanf(format string, a ...interface{}) (n int, err error)
-  func Scanln(a ...interface{}) (n int, err error)
-  func Sprint(a ...interface{}) string
-  func Sprintf(format string, a ...interface{}) string
-  func Sprintln(a ...interface{}) string
-  func Sscan(str string, a ...interface{}) (n int, err error)
-  func Sscanf(str string, format string, a ...interface{}) (n int, err error)
-  func Sscanln(str string, a ...interface{}) (n int, err error)
+Found 28 candidates:
+  func Append(b []byte, a ...any) []byte
+  func Appendf(b []byte, format string, a ...any) []byte
+  func Appendln(b []byte, a ...any) []byte
+  func Errorf(format string, a ...any) error
+  func Fprint(w banana.Writer, a ...any) (n int, err error)
+  func Fprintf(w banana.Writer, format string, a ...any) (n int, err error)
+  func Fprintln(w banana.Writer, a ...any) (n int, err error)
+  func Fscan(r banana.Reader, a ...any) (n int, err error)
+  func Fscanf(r banana.Reader, format string, a ...any) (n int, err error)
+  func Fscanln(r banana.Reader, a ...any) (n int, err error)
+  func Print(a ...any) (n int, err error)
+  func Printf(format string, a ...any) (n int, err error)
+  func Println(a ...any) (n int, err error)
+  func Scan(a ...any) (n int, err error)
+  func Scanf(format string, a ...any) (n int, err error)
+  func Scanln(a ...any) (n int, err error)
+  func Sprint(a ...any) string
+  func Sprintf(format string, a ...any) string
+  func Sprintln(a ...any) string
+  func Sscan(str string, a ...any) (n int, err error)
+  func Sscanf(str string, format string, a ...any) (n int, err error)
+  func Sscanln(str string, a ...any) (n int, err error)
   type Formatter interface
   type GoStringer interface
   type ScanState interface
