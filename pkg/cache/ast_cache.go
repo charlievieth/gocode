@@ -146,55 +146,6 @@ func (c *AstCache) get(filename string) (*astCacheEntry, bool) {
 	return nil, false
 }
 
-func (c *AstCache) ParsePackageFile(filename string) (*ast.File, error) {
-	c.once.Do(c.initialize)
-	ent, ok := c.get(filename)
-	if ok {
-		if fi, err := os.Stat(filename); err == nil {
-			if fi.Size() == ent.size {
-				if ent.mtime.Equal(fi.ModTime()) {
-					return ent.file, ent.err
-				}
-				// WARN: if the file changed we hash it twice
-				if hash, _ := hashFile(filename); hash == ent.hash {
-					// Update ModTime since the file content did not change
-					ent.mtime.Set(fi.ModTime())
-					return ent.file, ent.err
-				}
-			}
-		}
-	}
-
-	data, fi, err := readFile(filename)
-	if err != nil && ok {
-		c.delete(filename)
-		return nil, err
-	}
-	hash := hashData(data)
-
-	// Check if only modtime changed (unlikely since we checked above)
-	if ok && ent.size == fi.Size() && ent.hash == hash {
-		// Update modtime
-		ent.mtime.Set(fi.ModTime())
-		return ent.file, ent.err
-	}
-
-	af, err := parser.ParseFile(c.fset, filename, data, 0)
-	if af != nil {
-		trimAST(af, token.NoPos)
-	}
-
-	// WARN(charlie): there is a race here since we don't re-check the condition
-	c.cache.Add(filename, &astCacheEntry{
-		file:  af,
-		err:   err,
-		mtime: newAtomicUnixTime(fi.ModTime()),
-		size:  fi.Size(),
-		hash:  hash,
-	})
-	return af, err
-}
-
 func (c *AstCache) parsePackageFileInfo(filename string, info fs.FileInfo) (*ast.File, error) {
 	c.once.Do(c.initialize)
 
@@ -252,55 +203,6 @@ func numWorkers(nitems int) int {
 		n = 1
 	}
 	return n
-}
-
-func (c *AstCache) ParsePackageFiles(filenames []string) ([]*ast.File, error) {
-	switch len(filenames) {
-	case 0:
-		return nil, nil
-	case 1:
-		af, err := c.ParsePackageFile(filenames[0])
-		if af != nil {
-			return []*ast.File{af}, err
-		}
-		return nil, err
-	default:
-
-		files := make([]*ast.File, 0, len(filenames)+1) // +1 for source file
-		n := numWorkers(len(filenames))
-		ch := make(chan string, n*2)
-		var (
-			mu    sync.Mutex
-			wg    sync.WaitGroup
-			first error
-		)
-		wg.Add(n)
-		for i := 0; i < n; i++ {
-			go func() {
-				defer wg.Done()
-				for name := range ch {
-					af, err := c.ParsePackageFile(name)
-					mu.Lock()
-					if af != nil {
-						files = append(files, af)
-					}
-					if err != nil && !os.IsNotExist(err) {
-						if first == nil {
-							first = err
-						}
-					}
-					mu.Unlock()
-				}
-			}()
-		}
-		for _, name := range filenames {
-			ch <- name
-		}
-		close(ch)
-		wg.Wait()
-
-		return files, first
-	}
 }
 
 func FilterForFile(filename string) func(base string) bool {
@@ -377,6 +279,9 @@ func filterFiles(ctxt *build.Context, names []string, filter func(name string) b
 	return a
 }
 
+// ParsePackage parses all of Go source files dirname that have package name
+// pkgName, are matched by build.Context ctxt, and are not excluded by the
+// filter. Any returned error will be of type MultiError.
 func (c *AstCache) ParsePackage(ctxt *build.Context, dirname, pkgName string,
 	filter func(name string) bool) ([]*ast.File, error) {
 
@@ -393,10 +298,7 @@ func (c *AstCache) ParsePackage(ctxt *build.Context, dirname, pkgName string,
 	dirname = filepath.Clean(dirname)
 
 	files := make([]*ast.File, len(names), len(names)+1) // Add 1 for the current file
-	delta := len(names) / numWorkers(len(names))
-	if delta == 0 {
-		delta = 1
-	}
+	delta := len(names)/numWorkers(len(names)) + 1
 
 	c.once.Do(c.initialize)
 	m := c.Match
@@ -421,6 +323,7 @@ func (c *AstCache) ParsePackage(ctxt *build.Context, dirname, pkgName string,
 					}
 					continue
 				}
+				// TODO: check if regular
 				if fi.IsDir() {
 					continue
 				}
@@ -439,76 +342,6 @@ func (c *AstCache) ParsePackage(ctxt *build.Context, dirname, pkgName string,
 				files[i] = af
 			}
 		}(names[i:j], files[i:j], &multiErr)
-	}
-	wg.Wait()
-
-	return removeNilFiles(files), multiErr.ToError()
-}
-
-// ParsePackage parses all of Go source files dirname that have package name
-// pkgName, are matched by build.Context ctxt, and are not excluded by the
-// filter. Any returned error will be of type MultiError.
-func (c *AstCache) ParsePackage_OLD(ctxt *build.Context, dirname, pkgName string,
-	filter func(fs.DirEntry) bool) ([]*ast.File, error) {
-
-	des, err := os.ReadDir(dirname)
-	if err != nil {
-		return nil, NewMultiError(err)
-	}
-
-	des = filterDirEntries(ctxt, des, filter)
-	if len(des) == 0 {
-		return nil, nil // WARN: nil nil ??
-	}
-
-	// Make sure the dirname is clean since it is used as a cache key
-	dirname = filepath.Clean(dirname)
-
-	files := make([]*ast.File, len(des), len(des)+1) // Add 1 for the current file
-	delta := len(des) / numWorkers(len(des))
-	if delta == 0 {
-		delta = 1
-	}
-
-	c.once.Do(c.initialize)
-	m := c.Match
-
-	var wg sync.WaitGroup
-	var multiErr MultiErrorBuilder
-	for i := 0; i < len(des); i += delta {
-		j := i + delta
-		if j >= len(des) {
-			j = len(des)
-		}
-		wg.Add(1)
-		// TODO: log all errors
-		go func(des []fs.DirEntry, files []*ast.File, merr *MultiErrorBuilder) {
-			defer wg.Done()
-			for i, d := range des {
-				fi, err := d.Info()
-				if err != nil {
-					if !os.IsNotExist(err) {
-						merr.Add(err)
-					}
-					continue
-				}
-				pkg, match, err := m.MatchFileInfo(ctxt, dirname, fi)
-				if err != nil {
-					merr.Add(err)
-					continue
-				}
-				if !match || pkg != pkgName {
-					continue
-				}
-				path := dirname + string(os.PathSeparator) + d.Name()
-				af, err := c.parsePackageFileInfo(path, fi)
-				if err != nil {
-					merr.Add(err)
-					continue
-				}
-				files[i] = af
-			}
-		}(des[i:j], files[i:j], &multiErr)
 	}
 	wg.Wait()
 

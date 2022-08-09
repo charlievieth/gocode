@@ -117,34 +117,6 @@ func (c *MatchCache) matchFile(ctxt *build.Context, filename string) (pkgName st
 	return pkgName, expr.Eval(ctxt), nil
 }
 
-func (c *MatchCache) MatchFile(ctxt *build.Context, dir, name string) (pkgName string, match bool, err error) {
-	// No point caching these
-	if !strings.HasSuffix(name, ".go") || !buildutil.GoodOSArchFile(ctxt, name, nil) {
-		return "", false, nil
-	}
-
-	c.once.Do(c.initialize)
-
-	filename := filepath.Clean(dir + string(os.PathSeparator) + name)
-	ent, ok := c.get(filename)
-	if ok {
-		fi, err := os.Stat(filename)
-		if err != nil {
-			c.cache.Remove(filename)
-			return "", false, err
-		}
-		if ent.modTime.Equal(fi.ModTime()) {
-			return ent.pkgName, ent.expr.Eval(ctxt), nil
-		}
-	}
-
-	pkgName, match, err = c.matchFile(ctxt, filename)
-	if err != nil && ok {
-		c.cache.Remove(filename)
-	}
-	return pkgName, match, err
-}
-
 func (c *MatchCache) MatchFileInfo(ctxt *build.Context, dir string, info fs.FileInfo) (pkgName string, match bool, err error) {
 	name := info.Name()
 	// No point caching these

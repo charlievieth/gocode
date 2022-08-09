@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"encoding/json"
 	"fmt"
 	"go/build"
 	goimporter "go/importer"
@@ -425,6 +424,30 @@ func TestHashGoPkg(t *testing.T) {
 	}
 }
 
+func BenchmarkGetImporterCache(b *testing.B) {
+	key := ContextCacheKey(&build.Default)
+	for i := 0; i < b.N; i++ {
+		getImporterCache(key)
+	}
+}
+
+func TestGetImporterCache(t *testing.T) {
+	ctxt := build.Default
+	key := ContextCacheKey(&ctxt)
+	ii1 := getImporterCache(key)
+	ii2 := getImporterCache(key)
+	if ii1 != ii2 {
+		t.Fatalf("getImporterCache(%q) = %p; want: %p", key, ii1, ii2)
+	}
+
+	ctxt.BuildTags = append(ctxt.BuildTags, "foo")
+	key = ContextCacheKey(&ctxt)
+	ii2 = getImporterCache(key)
+	if ii1 == ii2 {
+		t.Fatalf("getImporterCache(%q) = %p; which should not equal: %p", key, ii2, ii1)
+	}
+}
+
 func TestDirCacheEntry(t *testing.T) {
 	tempdir := t.TempDir()
 	names := map[string]string{
@@ -566,22 +589,6 @@ func BenchmarkHashGoFiles(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		hashGoPkg(tempdir)
-	}
-}
-
-func writeJSON(t testing.TB, name string, v interface{}) {
-	f, err := os.Create(name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	enc := json.NewEncoder(f)
-	enc.SetIndent("", "    ")
-	if err := enc.Encode(v); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
 	}
 }
 

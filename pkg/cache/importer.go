@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -84,7 +83,6 @@ type importCacheEntry struct {
 	mtime      atomicUnixTime
 	htime      atomicUnixTime // time last hashed
 	size       int64
-	hash       uint64
 	buildID    string
 	fset       *token.FileSet // WARN: I don't think we need to persist this
 }
@@ -351,6 +349,7 @@ func getImporterCache(ctxtKey string) *iimporterCache {
 	return v.(*iimporterCache)
 }
 
+// TODO: this can be global
 type iimporterCache struct {
 	once sync.Once
 	// filename (.a) => *types.Package
@@ -379,8 +378,8 @@ func (c *iimporterCache) doInit() {
 	c.dirCache.OnEvicted = func(key string, _ interface{}) {
 		c.removeSrcAll(key)
 	}
-	c.sourceCache = make(map[string]map[string]*sourceImportCacheEntry)
 	c.fset = token.NewFileSet()
+	c.sourceCache = make(map[string]map[string]*sourceImportCacheEntry)
 }
 
 func (c *iimporterCache) initialize() { c.once.Do(c.doInit) }
@@ -396,10 +395,8 @@ func (c *iimporterCache) addPkg(filename string, ent *importCacheEntry) {
 }
 
 func (c *iimporterCache) addSrc(ctxtKey, importPath string, ent *sourceImportCacheEntry) {
+	c.initialize()
 	c.mu.Lock()
-	if c.sourceCache == nil {
-		c.sourceCache = make(map[string]map[string]*sourceImportCacheEntry)
-	}
 	if m := c.sourceCache[ctxtKey]; m != nil {
 		m[importPath] = ent
 	} else {
@@ -495,6 +492,7 @@ func (c *iimporterCache) removeSrcAll(importPath string) {
 // }
 
 func (c *iimporterCache) getSrc(ctxtKey, importPath string) (*sourceImportCacheEntry, bool) {
+	c.initialize()
 	c.mu.Lock()
 	ent, ok := c.sourceCache[ctxtKey][importPath]
 	c.mu.Unlock()
@@ -636,23 +634,6 @@ func (e *sourceImportCacheEntry) updateHash() bool {
 // 	}
 // 	return n, err
 // }
-
-func readBuildID(filename string) (string, error) {
-	id, err := buildid.ReadFile(filename)
-	if err == nil {
-		return id, nil
-	}
-	if os.IsNotExist(err) {
-		return "", err
-	}
-
-	// Fallback to hashing the file
-	u, err := hashFile(filename)
-	if err != nil {
-		return "", err
-	}
-	return "maphash." + strconv.FormatUint(u, 10), nil
-}
 
 // func readBuildID_NEW(filename string) (*os.File, string, error) {
 // 	f, err := os.Open(filename)
@@ -894,12 +875,12 @@ func hashGoPkg(dirname string) (uint64, error) {
 		if fi == nil {
 			continue
 		}
-		h.WriteString(fi.Name())
+		_, _ = h.WriteString(fi.Name())
 		binary.LittleEndian.PutUint64(buf, uint64(fi.Size()))
-		h.Write(buf)
+		_, _ = h.Write(buf)
 		binary.LittleEndian.PutUint64(buf, uint64(fi.ModTime().UnixNano()))
-		h.Write(buf)
-		h.WriteByte('|')
+		_, _ = h.Write(buf)
+		_ = h.WriteByte('|')
 	}
 	return h.Sum64(), nil
 }

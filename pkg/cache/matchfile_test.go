@@ -39,7 +39,11 @@ func testMatchFile(t *testing.T, m *MatchCache, ctxt *build.Context, dir string)
 		if testing.Short() && strings.HasSuffix(d.Name(), "_test.go") {
 			continue
 		}
-		gotName, gotMatch, err := m.MatchFile(ctxt, dir, d.Name())
+		info, err := d.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotName, gotMatch, err := m.MatchFileInfo(ctxt, dir, info)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -235,35 +239,38 @@ func BenchmarkMatchFile(b *testing.B) {
 
 	m := new(MatchCache)
 	m.once.Do(m.initialize)
-	setupBench := func(b *testing.B, name string) (*MatchCache, *matchEntry) {
+	setupBench := func(b *testing.B, name string) (*MatchCache, os.FileInfo) {
 		m.cache.Clear()
-		if _, _, err := m.MatchFile(ctxt, dir, name); err != nil {
+		fi, err := os.Stat(filepath.Join(dir, name))
+		if err != nil {
 			b.Fatal(err)
 		}
-
-		v, ok := m.cache.Get(filepath.Join(dir, name))
+		if _, _, err := m.MatchFileInfo(ctxt, dir, fi); err != nil {
+			b.Fatal(err)
+		}
+		_, ok := m.cache.Get(filepath.Join(dir, name))
 		if !ok {
 			b.Fatal("missing file:", name)
 		}
 		b.ResetTimer()
 
-		return m, v.(*matchEntry)
+		return m, fi
 	}
 
 	b.Run("NoChange", func(b *testing.B) {
-		m, _ := setupBench(b, "read_notags.go")
+		m, fi := setupBench(b, "read_notags.go")
 		for i := 0; i < b.N; i++ {
-			if _, _, err := m.MatchFile(ctxt, dir, "read_notags.go"); err != nil {
+			if _, _, err := m.MatchFileInfo(ctxt, dir, fi); err != nil {
 				b.Fatal(err)
 			}
 		}
 	})
 
 	b.Run("Parallel", func(b *testing.B) {
-		m, _ := setupBench(b, "read_notags.go")
+		m, fi := setupBench(b, "read_notags.go")
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				if _, _, err := m.MatchFile(ctxt, dir, "read_notags.go"); err != nil {
+				if _, _, err := m.MatchFileInfo(ctxt, dir, fi); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -272,12 +279,12 @@ func BenchmarkMatchFile(b *testing.B) {
 
 	b.Run("ModTime", func(b *testing.B) {
 		path := filepath.Join(dir, "read_notags.go")
-		m, _ := setupBench(b, "read_notags.go")
+		m, fi := setupBench(b, "read_notags.go")
 		if _, ok := m.cache.Get(path); !ok {
 			b.Fatal("missing:", path)
 		}
 		for i := 0; i < b.N; i++ {
-			if _, _, err := m.MatchFile(ctxt, dir, "read_notags.go"); err != nil {
+			if _, _, err := m.MatchFileInfo(ctxt, dir, fi); err != nil {
 				b.Fatal(err)
 			}
 			e, _ := m.get(path)
@@ -292,9 +299,9 @@ func BenchmarkMatchFile(b *testing.B) {
 		b.Run(bench.benchname, func(b *testing.B) {
 			b.Run("NewEntry", func(b *testing.B) {
 				path := filepath.Join(dir, bench.filename)
-				m, _ := setupBench(b, bench.filename)
+				m, fi := setupBench(b, bench.filename)
 				for i := 0; i < b.N; i++ {
-					if _, _, err := m.MatchFile(ctxt, dir, bench.filename); err != nil {
+					if _, _, err := m.MatchFileInfo(ctxt, dir, fi); err != nil {
 						b.Fatal(err)
 					}
 					m.cache.Remove(path)

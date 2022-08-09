@@ -1,19 +1,14 @@
 package cache
 
 import (
-	"crypto/sha1"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"sync"
 	"testing"
-	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -84,116 +79,4 @@ func TestMultiErrorBuilder(t *testing.T) {
 
 	merr := m.ToError().(*MultiError)
 	assert.Len(t, merr.Errors(), 16)
-}
-
-func TestStringInterner(t *testing.T) {
-	var x stringInterner
-	s1 := "s"
-	i1 := x.Intern(s1)
-	p1 := (*reflect.StringHeader)(unsafe.Pointer(&i1)).Data
-	p2 := (*reflect.StringHeader)(unsafe.Pointer(&s1)).Data
-	if p1 == p2 {
-		t.Error("Intern did not make a copy of the string")
-	}
-	i2 := x.Intern(s1)
-	p2 = (*reflect.StringHeader)(unsafe.Pointer(&i2)).Data
-	if p1 != p2 {
-		t.Error("Intern did not return the interned string")
-	}
-}
-
-func BenchmarkStringInterner(b *testing.B) {
-	var strs = [8]string{
-		"client",
-		"cache",
-		"operations",
-		"logging",
-		"config",
-		"models",
-		"test",
-		"util",
-	}
-
-	b.Run("Serial", func(b *testing.B) {
-		var x stringInterner
-		for i := 0; i < b.N; i++ {
-			x.Intern(strs[i%len(strs)])
-		}
-	})
-
-	b.Run("Parallel", func(b *testing.B) {
-		var x stringInterner
-		b.RunParallel(func(pb *testing.PB) {
-			for i := 0; pb.Next(); i++ {
-				x.Intern(strs[i%len(strs)])
-			}
-		})
-	})
-}
-
-func xhashFile(name string) (uint64, error) {
-	f, err := os.Open(name)
-	if err != nil {
-		return 0, err
-	}
-	h := sha1.New()
-	p := hashBufferPool.Get().(*[]byte)
-	_, err = io.CopyBuffer(h, f, *p)
-	f.Close()
-	return binary.LittleEndian.Uint64(h.Sum(nil)), nil
-
-	// data, err := os.ReadFile(name)
-	// if err != nil {
-	// 	return 0, err
-	// }
-	// var h maphash.Hash
-	// h.SetSeed(hashSeed)
-	// h.Write(data)
-	// return h.Sum64(), nil
-}
-
-func BenchmarkHashFile(b *testing.B) {
-	if testing.Short() {
-		b.Skip("short test")
-	}
-	sizes := []int{
-		// 4,
-		// 8,
-		// 128,
-		512,
-		1024,
-		1024 * 10,
-	}
-
-	data := make([]byte, sizes[len(sizes)-1]*1024)
-	rr := rand.New(rand.NewSource(1234))
-	for i := range data {
-		data[i] = byte(rr.Intn(256))
-	}
-	tempdir := b.TempDir()
-	for _, size := range sizes {
-		name := filepath.Join(tempdir, fmt.Sprintf("%d.txt", size))
-		if err := os.WriteFile(name, data[:size*1024], 0644); err != nil {
-			b.Fatal(err)
-		}
-	}
-
-	b.ResetTimer()
-	for _, size := range sizes {
-		var name string
-		if size < 1024 {
-			name = fmt.Sprintf("%dKb", size)
-		} else {
-			name = fmt.Sprintf("%dMb", size/1024)
-		}
-		b.Run(name, func(b *testing.B) {
-			path := filepath.Join(tempdir, fmt.Sprintf("%d.txt", size))
-			b.SetBytes(int64(size) * 1024)
-			for i := 0; i < b.N; i++ {
-				if _, err := xhashFile(path); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
 }
