@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -527,6 +528,8 @@ func trimAST(file *ast.File, pos token.Pos) {
 			switch n := n.(type) {
 			case *ast.FuncDecl:
 				n.Body = nil
+			case *ast.FuncLit:
+				n.Body.List = nil
 			case *ast.BlockStmt:
 				n.List = nil
 			case *ast.CaseClause:
@@ -534,24 +537,86 @@ func trimAST(file *ast.File, pos token.Pos) {
 			case *ast.CommClause:
 				n.Body = nil
 			case *ast.CompositeLit:
-				// Leave elts in place for [...]T
-				// array literals, because they can
-				// affect the expression's type.
-				if !isEllipsisArray(n.Type) {
+				// The below logic is copied from:
+				// golang.org/x/tools/internal/lsp/cache/parse.go
+
+				// types.Info.Types for long slice/array literals are particularly
+				// expensive. Try to clear them out: T{e, ..., e} => T{}
+				at, ok := n.Type.(*ast.ArrayType)
+				if !ok {
+					// Map or struct literal: no harm removing all its fields.
 					n.Elts = nil
+					break
 				}
+
+				// Removing the elements from an ellipsis array changes its type.
+				// Try to set the length explicitly so we can continue.
+				//  [...]T{e, ..., e} => [3]T[]{}
+				if _, ok := at.Len.(*ast.Ellipsis); ok {
+					length, ok := arrayLength(n)
+					if !ok {
+						break
+					}
+					at.Len = &ast.BasicLit{
+						Kind:     token.INT,
+						Value:    strconv.Itoa(length),
+						ValuePos: at.Len.Pos(),
+					}
+				}
+				n.Elts = nil
 			}
 		}
 		return true
 	})
 }
 
-// TODO(charlie): move this to a shared location
-func isEllipsisArray(n ast.Expr) bool {
-	at, ok := n.(*ast.ArrayType)
-	if !ok {
-		return false
+// arrayLength returns the length of some simple forms of ellipsis array literal.
+// Notably, it handles the tables in golang.org/x/text.
+//
+// copied from: golang.org/x/tools/internal/lsp/cache/parse.go
+func arrayLength(array *ast.CompositeLit) (int, bool) {
+	litVal := func(expr ast.Expr) (int, bool) {
+		lit, ok := expr.(*ast.BasicLit)
+		if !ok {
+			return 0, false
+		}
+		val, err := strconv.ParseInt(lit.Value, 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return int(val), true
 	}
-	_, ok = at.Len.(*ast.Ellipsis)
-	return ok
+	largestKey := -1
+	for _, elt := range array.Elts {
+		kve, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		switch key := kve.Key.(type) {
+		case *ast.BasicLit:
+			if val, ok := litVal(key); ok && largestKey < val {
+				largestKey = val
+			}
+		case *ast.BinaryExpr:
+			// golang.org/x/text uses subtraction (and only subtraction) in its indices.
+			if key.Op != token.SUB {
+				break
+			}
+			x, ok := litVal(key.X)
+			if !ok {
+				break
+			}
+			y, ok := litVal(key.Y)
+			if !ok {
+				break
+			}
+			if val := x - y; largestKey < val {
+				largestKey = val
+			}
+		}
+	}
+	if largestKey != -1 {
+		return largestKey + 1, true
+	}
+	return len(array.Elts), true
 }
