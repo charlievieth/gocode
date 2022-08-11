@@ -592,6 +592,34 @@ func BenchmarkHashGoFiles(b *testing.B) {
 	}
 }
 
+func BenchmarkImportBinary(b *testing.B) {
+	wd, err := os.Getwd()
+	if err != nil {
+		b.Fatal(err)
+	}
+	ctxt := build.Default
+	ii := newIImporter(&ctxt, noopLogger)
+	filename, _ := FindPkg(&ctxt, "fmt", wd)
+	if filename == "" {
+		b.Fatalf("FindPkg(%q, %q) = %q", "fmt", wd, "")
+	}
+	b.ResetTimer()
+
+	b.Run("Serial", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			ii.importBinary("fmt", filename, "fmt")
+		}
+	})
+
+	b.Run("Parallel", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				ii.importBinary("fmt", filename, "fmt")
+			}
+		})
+	})
+}
+
 // func TestGoImport(t *testing.T) {
 // 	wd, err := os.Getwd()
 // 	if err != nil {
