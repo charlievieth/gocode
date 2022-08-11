@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/charlievieth/buildutil/contextutil"
 	"github.com/mdempsky/gocode/pkg/cache/lru"
 	"github.com/mdempsky/gocode/pkg/internal/buildid"
 	"github.com/mdempsky/gocode/pkg/internal/srcimporter"
@@ -538,6 +539,10 @@ func newIImporter(ctxt *build.Context, logger func(string, ...interface{})) *iim
 	if ctxt == nil {
 		orig := build.Default
 		ctxt = &orig
+	}
+	// WARN: we should only do this in one place
+	if ctxt.HasSubdir == nil {
+		ctxt.HasSubdir = contextutil.HasSubdirFunc(ctxt)
 	}
 	if logger == nil {
 		logger = noopLogger
