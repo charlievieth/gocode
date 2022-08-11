@@ -11,7 +11,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -230,80 +229,20 @@ func BenchmarkReadFile(b *testing.B) {
 	}
 }
 
-func BenchmarkReadFile_Exec(b *testing.B) {
+func BenchmarkReadFileParallel(b *testing.B) {
 	f, err := decodeToTempFile("testdata/a.macho.base64")
 	if err != nil {
 		b.Fatalf("obscuretestdata.decodeToTempFile(testdata/%s): %v", "a.macho.base64", err)
 	}
 	defer os.Remove(f)
-
-	// goExe, err := exec.LookPath("go")
-	// goExe, err := exec.LookPath("go")
-	// if err != nil {
-	// 	b.Fatal(err)
-	// }
-	exe := "/opt/homebrew/Cellar/go/1.18.4/libexec/pkg/tool/darwin_arm64/buildid"
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
-		// if err := exec.Command(exe, "tool", "buildid", f).Run(); err != nil {
-		if err := exec.Command(exe, f).Run(); err != nil {
-			b.Fatal(err)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := ReadFile(f)
+			if err != nil {
+				b.Fatal(err)
+			}
 		}
-	}
+	})
 }
-
-/*
-var hashSeed = maphash.MakeSeed()
-
-func hashFileID(name string) (string, error) {
-	f, err := os.Open(name)
-	if err != nil {
-		return "", err
-	}
-	// buf := make([]byte, 1024)
-	buf := make([]byte, 4096)
-	n, err := io.ReadFull(f, buf)
-	f.Close()
-	if err != nil && n == 0 {
-		return "", err
-	}
-
-	// h := fnv.New64a()
-	// h.Write(buf[:n])
-	// return hex.EncodeToString(h.Sum(nil)), nil
-
-	// sum := md5.Sum(buf[:n])
-	// return hex.EncodeToString(sum[:]), nil
-
-	var h maphash.Hash
-	h.SetSeed(hashSeed)
-	h.Write(buf[:n])
-	return hex.EncodeToString(h.Sum(nil)), err
-}
-
-func BenchmarkHashFile(b *testing.B) {
-	f, err := decodeToTempFile("testdata/a.macho.base64")
-	if err != nil {
-		b.Fatalf("obscuretestdata.decodeToTempFile(testdata/%s): %v", "a.macho.base64", err)
-	}
-	defer os.Remove(f)
-
-	fi, err := os.Stat(f)
-	if err != nil {
-		b.Fatal(err)
-	}
-	b.SetBytes(fi.Size())
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		// _, err := hashFile(f)
-		_, err := hashFileID(f)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-*/
