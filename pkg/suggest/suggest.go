@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/charlievieth/buildutil"
+	"github.com/charlievieth/buildutil/contextutil"
 	"github.com/mdempsky/gocode/pkg/cache"
 	"github.com/mdempsky/gocode/pkg/lookdot"
 )
@@ -136,6 +137,10 @@ func (c *Config) context(filename string, data []byte) *build.Context {
 			ctxt = &dupe
 		}
 	}
+	if ctxt.HasSubdir == nil {
+		ctxt.HasSubdir = contextutil.HasSubdirFunc(ctxt)
+	}
+
 	// WARN: should we det Dir here ???
 	// if ctxt.Dir == "" {
 	// 	ctxt.Dir = filepath.Dir(filename)
